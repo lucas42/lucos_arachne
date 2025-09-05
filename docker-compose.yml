@@ -1,0 +1,22 @@
+services:
+  triplestore:
+    build:
+      context: ./triplestore
+    container_name: fuseki
+    ports:
+      - "3030:3030"
+    environment:
+      - CLIENT_KEYS
+    volumes:
+      - fuseki_data:/fuseki/run/databases
+
+  # ingestor:
+  #   build: ./ingestor
+  #   container_name: ingestor
+  #   environment:
+  #     - FUSEKI_URL=http://triplestore:3030/arachne
+  #   depends_on:
+  #     - triplestore
+
+volumes:
+  fuseki_data:

@@ -1,0 +1,16 @@
+[main]
+ssl.enabled = false
+
+[users]
+${USERS}
+
+[roles]
+
+[urls]
+## Control functions open to anyone
+/$/server  = anon
+/$/ping    = anon
+/$/metrics = anon
+
+# Everything else needs basic auth
+/**=authcBasic
