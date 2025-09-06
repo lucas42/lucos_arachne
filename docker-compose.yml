@@ -2,7 +2,8 @@ services:
   triplestore:
     build:
       context: ./triplestore
-    container_name: fuseki
+    container_name: lucos_arachne_fuseki
+    image: lucas42/lucos_arachne_fuseki
     ports:
       - "3030:3030"
     environment:
@@ -10,13 +11,15 @@ services:
     volumes:
       - fuseki_data:/fuseki/run/databases
 
-  # ingestor:
-  #   build: ./ingestor
-  #   container_name: ingestor
-  #   environment:
-  #     - FUSEKI_URL=http://triplestore:3030/arachne
-  #   depends_on:
-  #     - triplestore
+  ingestor:
+    build: ./ingestor
+    container_name: lucos_arcachne_ingestor
+    image: lucas42/lucos_arcachne_ingestor
+    environment:
+      - KEY_LUCOS_ARACHNE
+      - KEY_LUCOS_EOLAS
+    depends_on:
+      - triplestore
 
 volumes:
   fuseki_data:
