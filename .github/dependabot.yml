@@ -1,0 +1,28 @@
+version: 2
+updates:
+- package-ecosystem: docker
+  directory: "/ingestor"
+  schedule:
+    interval: daily
+    time: "07:00"
+- package-ecosystem: docker
+  directory: "/triplestore"
+  schedule:
+    interval: daily
+    time: "07:00"
+- package-ecosystem: docker
+  directory: "/ui"
+  schedule:
+    interval: daily
+    time: "07:00"
+- package-ecosystem: npm
+  directory: "/ui"
+  schedule:
+    interval: daily
+    time: "07:00"
+  open-pull-requests-limit: 10
+- package-ecosystem: "github-actions"
+  directory: "/"
+  schedule:
+    interval: daily
+    time: "07:00"
