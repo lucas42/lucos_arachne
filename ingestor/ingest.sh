@@ -11,7 +11,10 @@ if [ -z "${KEY_LUCOS_ARACHNE}" ]; then
 fi
 
 # The URLs to ingest from
-declare -A urls=( ["lucos_eolas"]="https://eolas.l42.eu/metadata/all/data/")
+declare -A urls=(
+	["lucos_eolas"]="https://eolas.l42.eu/metadata/all/data/"
+	["lucos_contacts"]="https://contacts.l42.eu/agents/all"
+)
 
 for system in "${!urls[@]}"; do
 	url=${urls[$system]}
