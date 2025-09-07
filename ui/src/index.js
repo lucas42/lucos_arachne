@@ -11,11 +11,17 @@ app.use(express.static('./resources', {extensions: ['json']}));
 
 // Avoid authentication for _info, so call before invoking auth middleware
 app.get('/_info', catchErrors(async (req, res) => {
-	res.json({
+	const output ={
 		system: 'lucos_arachne',
 		checks: {
+			sparql: {
+				techDetail: 'Checks a query can be made to the sparql endpoint'
+			}
 		},
 		metrics: {
+			triples: {
+				techDetail: 'Number of triples in default graph of triplestore',
+			},
 		},
 		ci: {
 			circle: "gh/lucas42/lucos_arachne",
@@ -24,7 +30,28 @@ app.get('/_info', catchErrors(async (req, res) => {
 		title: "Arachne",
 		show_on_homepage: true,
 		icon: "/icon.png",
-	});
+	};
+	try {
+		const body = new URLSearchParams();
+		body.append("query", "SELECT (COUNT(*) as ?triplecount) \nWHERE { ?s ?p ?o } ");
+		const response = await fetch("http://triplestore:3030/arachne/", {
+			method: "POST",
+			body,
+			headers: {
+				Authorization: `Basic ${btoa(`lucos_arachne:${process.env.KEY_LUCOS_ARACHNE}`)}`,
+			},
+		});
+		const data = await response.json();
+		const triplecount = parseInt(data.results.bindings[0].triplecount.value);
+		output.checks.sparql.ok = true;
+		output.metrics.triples.value = triplecount;
+	} catch (error) {
+		output.checks.sparql.ok = false;
+		output.checks.sparql.debug = error.message
+		delete output.metrics.triples;
+	}
+
+	res.json(output);
 }));
 
 app.use((req, res, next) => app.auth(req, res, next));
