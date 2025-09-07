@@ -2,7 +2,11 @@ import 'lucos_navbar';
 import Yasgui from "@triply/yasgui";
 import "@triply/yasgui/build/yasgui.min.css";
 
-const yasgui = new Yasgui(document.getElementById("yasgui"), {
-  requestConfig: { endpoint: "/sparql" },
-  copyEndpointOnNewTab: false,
+// yasgui includes any search params in requests to sparql endpoint, so ensure there are none
+if (window.location.search) {
+	window.history.pushState(true, null, window.location.pathname);
+}
+new Yasgui(document.getElementById("yasgui"), {
+	requestConfig: { endpoint: "/sparql" },
+	copyEndpointOnNewTab: false,
 });
