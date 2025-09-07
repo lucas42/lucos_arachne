@@ -1,0 +1,40 @@
+body {
+	background: #d8fff0;
+}
+#intro {
+	display: flex;
+	align-items: center;
+}
+.icon {
+	width: 0;
+	flex-basis: 100%;
+	max-width: 80px;
+}
+.tagline {
+	margin: auto 20px;
+	font-size: 20px;
+	flex-grow: 1;
+	text-align: center;
+	font-family: "Arial Black", Gadget, sans-serif;
+}
+
+#sparql-explorer {
+	background: #f0fbff;
+	border: solid #555;
+	border-radius: 5px;
+	margin: 15px 0;
+}
+#sparql-explorer h2 {
+	margin: 0;
+	text-align: center;
+	background-color: #555;
+	color: #fff;
+	padding: 3px;
+	background-image: linear-gradient(transparent 10%, transparent 15%, rgba(0, 0, 0, 0.4) 100%);
+}
+#sparql-explorer .yasgui {
+	margin: 10px;
+}
+.yasgui .autocompleteWrapper {
+	display: none !important;
+}

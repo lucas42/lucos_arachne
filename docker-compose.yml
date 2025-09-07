@@ -2,8 +2,8 @@ services:
   triplestore:
     build:
       context: ./triplestore
-    container_name: lucos_arachne_fuseki
-    image: lucas42/lucos_arachne_fuseki
+    container_name: lucos_arachne_triplestore
+    image: lucas42/lucos_arachne_triplestore
     ports:
       - "3030:3030"
     environment:
@@ -18,6 +18,18 @@ services:
     environment:
       - KEY_LUCOS_ARACHNE
       - KEY_LUCOS_EOLAS
+    depends_on:
+      - triplestore
+  ui:
+    build: ui
+    container_name: lucos_arcachne_ui
+    ports:
+      - "8033:8033"
+    image: lucas42/lucos_arcachne_ui
+    restart: always
+    environment:
+      - PORT=8033
+      - KEY_LUCOS_ARACHNE
     depends_on:
       - triplestore
 

@@ -1,0 +1,32 @@
+{
+  "name": "lucos_arachne_ui",
+  "version": "1.0.0",
+  "description": "UI for lucoOS knowledge graph",
+  "type": "module",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "build": "webpack",
+    "start": "node index.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/lucas42/lucos_arachne.git"
+  },
+  "bugs": {
+    "url": "https://github.com/lucas42/lucos_arachne/issues"
+  },
+  "homepage": "https://github.com/lucas42/lucos_arachne#readme",
+  "dependencies": {
+    "@triply/yasgui": "^4.2.28",
+    "ejs": "^3.1.10",
+    "express": "^5.1.0",
+    "http-proxy-middleware": "^3.0.5"
+  },
+  "devDependencies": {
+    "css-loader": "^7.1.2",
+    "folder-hash": "^4.1.1",
+    "lucos_navbar": "^2.0.12",
+    "style-loader": "^4.0.0",
+    "webpack-cli": "^6.0.1"
+  }
+}
