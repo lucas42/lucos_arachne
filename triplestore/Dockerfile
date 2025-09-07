@@ -1,4 +1,4 @@
-FROM openjdk:17-jdk-slim
+FROM openjdk:18-jdk-slim
 
 # Install Fuseki from source
 RUN apt-get update && apt-get install -y wget unzip gettext-base
