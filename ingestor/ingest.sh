@@ -35,8 +35,8 @@ for system in "${!urls[@]}"; do
 	# Fetch the latest version of data
 	curl "$url" --header "Accept: application/rdf+xml" --header "${auth_header}" --silent --show-error --fail --location --output $tmp_file
 	# Delete everything in the triplestore for the given graph
-	curl "http://lucos_arachne:${KEY_LUCOS_ARACHNE}@triplestore:3030/arachne/" --data-urlencode "update=DROP GRAPH <${url}>" --silent --show-error --fail > /dev/null
+	curl "http://lucos_arachne:${KEY_LUCOS_ARACHNE}@triplestore:3030/raw_arachne/update" --data-urlencode "update=DROP GRAPH <${url}>" --silent --show-error --fail > /dev/null
 	# Upload the fresh data to the triplestore
-	curl "http://lucos_arachne:${KEY_LUCOS_ARACHNE}@triplestore:3030/arachne/data?graph=${url}" --silent --show-error --fail --form "file=@${tmp_file}" | grep tripleCount
+	curl "http://lucos_arachne:${KEY_LUCOS_ARACHNE}@triplestore:3030/raw_arachne/data?graph=${url}" --silent --show-error --fail --form "file=@${tmp_file}" | grep tripleCount
 	rm $tmp_file
 done
