@@ -22,11 +22,12 @@ for system in "${!urls[@]}"; do
 		exit 2
 	fi
 	echo "Ingesting data from $url"
+	tmp_file="/tmp/${system}.ttl"
 	# Fetch the latest version of data
-	curl "$url" --header "Accept: text/turtle" --header "Authorization: key ${key}" --silent --show-error --fail --location --output /tmp/data.ttl
+	curl "$url" --header "Accept: text/turtle" --header "Authorization: key ${key}" --silent --show-error --fail --location --output $tmp_file
 	# Delete everything in the triplestore for the given graph
 	curl "http://lucos_arachne:${KEY_LUCOS_ARACHNE}@triplestore:3030/arachne/" --data-urlencode "update=DROP GRAPH <${url}>" --silent --show-error --fail > /dev/null
 	# Upload the fresh data to the triplestore
-	curl "http://lucos_arachne:${KEY_LUCOS_ARACHNE}@triplestore:3030/arachne/data?graph=${url}" --silent --show-error --fail --form "file=@/tmp/data.ttl" | grep tripleCount
-	rm /tmp/data.ttl
+	curl "http://lucos_arachne:${KEY_LUCOS_ARACHNE}@triplestore:3030/arachne/data?graph=${url}" --silent --show-error --fail --form "file=@${tmp_file}" | grep tripleCount
+	rm $tmp_file
 done
