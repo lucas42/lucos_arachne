@@ -3,7 +3,19 @@
 # Ingests RDF from other systems and adds each as its own graph in the triplestore
 #
 
-set -e
+failure() {
+	error_message="Command \`$3\` exited with code $2 [line $1]"
+	echo "Sending error to schedule tracker"
+	curl "$SCHEDULE_TRACKER_ENDPOINT" --data "{
+		\"system\": \"lucos_arachne_ingestor\",
+		\"frequency\": 3600,
+		\"status\": \"error\",
+		\"message\": \"${error_message//\"/\\\"}\"
+	}" -H "Content-Type: application/json" --silent --show-error --fail
+	exit "$2"
+}
+
+trap 'failure "$LINENO" "$?" "$BASH_COMMAND"' ERR
 
 if [ -z "${KEY_LUCOS_ARACHNE}" ]; then
 	echo "No KEY_LUCOS_ARACHNE environment variable found — won't be able to authenticate against triplestore endpoint"
@@ -53,4 +65,11 @@ curl "$LOGANNE_ENDPOINT" --data '{
 	"source":"lucos_arachne_ingestor",
 	"humanReadable":"Data ingested into knowledge graph",
 	"url":"https://arachne.l42.eu/"
-}' -H "Content-Type: application/json" --fail
+}' -H "Content-Type: application/json" --silent --show-error --fail > /dev/null
+
+
+curl "$SCHEDULE_TRACKER_ENDPOINT" --data '{
+	"system": "lucos_arachne_ingestor",
+	"frequency": 3600,
+	"status": "success"
+}' -H "Content-Type: application/json" --silent --show-error --fail
