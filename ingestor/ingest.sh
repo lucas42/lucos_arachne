@@ -48,3 +48,9 @@ for system in "${!urls[@]}"; do
 	curl "http://lucos_arachne:${KEY_LUCOS_ARACHNE}@triplestore:3030/raw_arachne/data?graph=${url}" --user-agent "lucos_arachne_ingestor" --silent --show-error --fail --form "file=@${tmp_file}" | grep tripleCount
 	rm $tmp_file
 done
+curl "$LOGANNE_ENDPOINT" --data '{
+	"type":"knowledgeIngest",
+	"source":"lucos_arachne_ingestor",
+	"humanReadable":"Data ingested into knowledge graph",
+	"url":"https://arachne.l42.eu/"
+}' -H "Content-Type: application/json" --fail

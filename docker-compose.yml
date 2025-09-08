@@ -16,6 +16,7 @@ services:
     container_name: lucos_arachne_ingestor
     image: lucas42/lucos_arachne_ingestor
     environment:
+      - LOGANNE_ENDPOINT
       - KEY_LUCOS_ARACHNE
       - KEY_LUCOS_EOLAS
       - KEY_LUCOS_CONTACTS
