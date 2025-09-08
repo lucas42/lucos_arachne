@@ -13,8 +13,8 @@ services:
 
   ingestor:
     build: ./ingestor
-    container_name: lucos_arcachne_ingestor
-    image: lucas42/lucos_arcachne_ingestor
+    container_name: lucos_arachne_ingestor
+    image: lucas42/lucos_arachne_ingestor
     environment:
       - KEY_LUCOS_ARACHNE
       - KEY_LUCOS_EOLAS
@@ -23,10 +23,10 @@ services:
       - triplestore
   ui:
     build: ui
-    container_name: lucos_arcachne_ui
+    container_name: lucos_arachne_ui
     ports:
       - "8033:8033"
-    image: lucas42/lucos_arcachne_ui
+    image: lucas42/lucos_arachne_ui
     restart: always
     environment:
       - PORT=8033
