@@ -16,6 +16,7 @@
 		fuseki:name       "data";
 		fuseki:operation  fuseki:gsp-rw
 	];
+	fuseki:serviceQuery   "query", "sparql" ;
 	fuseki:dataset        :rawDataset ;
 .
 

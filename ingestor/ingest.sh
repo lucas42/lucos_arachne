@@ -60,6 +60,16 @@ for system in "${!urls[@]}"; do
 	curl "http://lucos_arachne:${KEY_LUCOS_ARACHNE}@triplestore:3030/raw_arachne/data?graph=${url}" --user-agent "lucos_arachne_ingestor" --silent --show-error --fail --form "file=@${tmp_file}" | grep tripleCount
 	rm $tmp_file
 done
+
+# Check for any graphs in the triplestore which aren't in our list here, and delete them
+curl "http://lucos_arachne:${KEY_LUCOS_ARACHNE}@triplestore:3030/raw_arachne/sparql" --header "Accept:text/csv" --user-agent "lucos_arachne_ingestor" --data-urlencode "query=SELECT * WHERE {GRAPH ?g{}}" --silent --show-error --fail | tail -n +2  | while read line; do
+	graph_uri=`echo $line | tr -d '\r\n'`
+	if ! [[ ${urls[@]} =~ $graph_uri ]] then
+		echo "Deleting unknown graph <${graph_uri}>"
+		curl "http://lucos_arachne:${KEY_LUCOS_ARACHNE}@triplestore:3030/raw_arachne/update" --user-agent "lucos_arachne_ingestor" --data-urlencode "update=DROP GRAPH <${graph_uri}>" --silent --show-error --fail > /dev/null
+	fi
+done
+
 curl "$LOGANNE_ENDPOINT" --data '{
 	"type":"knowledgeIngest",
 	"source":"lucos_arachne_ingestor",
