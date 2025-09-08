@@ -20,6 +20,8 @@ declare -A urls=(
 	["skos"]="http://www.w3.org/2004/02/skos/core#"
 	["owl"]="https://www.w3.org/2002/07/owl"
 	["dc"]="http://purl.org/dc/terms/"
+	["rdf"]="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+	["rdfs"]="http://www.w3.org/2000/01/rdf-schema#"
 )
 
 for system in "${!urls[@]}"; do
