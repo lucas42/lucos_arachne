@@ -18,6 +18,8 @@ declare -A urls=(
 	["time"]="https://www.w3.org/2006/time"
 	["dbpedia_meanOfTransportation"]="https://dbpedia.org/ontology/MeanOfTransportation"
 	["skos"]="http://www.w3.org/2004/02/skos/core#"
+	["owl"]="https://www.w3.org/2002/07/owl"
+	["dc"]="http://purl.org/dc/terms/"
 )
 
 for system in "${!urls[@]}"; do
