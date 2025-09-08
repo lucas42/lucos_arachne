@@ -40,6 +40,8 @@ for system in "${!urls[@]}"; do
 	tmp_file="/tmp/${system}.rdf"
 	# Fetch the latest version of data
 	curl "$url" --header "Accept: application/rdf+xml" --header "${auth_header}" --user-agent "lucos_arachne_ingestor" --silent --show-error --fail --location --output $tmp_file
+	# schema.org is referred to using http and https — standardise to https
+	sed -i 's~http://schema.org/~https://schema.org/~g' $tmp_file
 	# Delete everything in the triplestore for the given graph
 	curl "http://lucos_arachne:${KEY_LUCOS_ARACHNE}@triplestore:3030/raw_arachne/update" --user-agent "lucos_arachne_ingestor" --data-urlencode "update=DROP GRAPH <${url}>" --silent --show-error --fail > /dev/null
 	# Upload the fresh data to the triplestore
