@@ -17,6 +17,7 @@ declare -A urls=(
 	["foaf"]="http://xmlns.com/foaf/spec/"
 	["time"]="https://www.w3.org/2006/time"
 	["dbpedia_meanOfTransportation"]="https://dbpedia.org/ontology/MeanOfTransportation"
+	["skos"]="http://www.w3.org/2004/02/skos/core#"
 )
 
 for system in "${!urls[@]}"; do
