@@ -25,7 +25,7 @@ fi
 # The URLs to ingest from
 declare -A urls=(
 	["lucos_eolas"]="https://eolas.l42.eu/metadata/all/data/"
-	["lucos_contacts"]="https://contacts.l42.eu/agents/all"
+	["lucos_contacts"]="https://contacts.l42.eu/people/all"
 	["foaf"]="http://xmlns.com/foaf/spec/"
 	["time"]="https://www.w3.org/2006/time"
 	["dbpedia_meanOfTransportation"]="https://dbpedia.org/ontology/MeanOfTransportation"
