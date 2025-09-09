@@ -49,16 +49,19 @@ for system in "${!urls[@]}"; do
 		auth_header="Authorization: key ${key}"
 	fi
 	echo "Ingesting data from $url"
-	tmp_file="/tmp/${system}.rdf"
+	tmp_file=$(mktemp)
+	response_headers=$(mktemp)
 	# Fetch the latest version of data
-	curl "$url" --header "Accept: application/rdf+xml" --header "${auth_header}" --user-agent "lucos_arachne_ingestor" --silent --show-error --fail --location --output $tmp_file
+	curl "$url" --header "Accept: application/rdf+xml, text/turtle, application/ld+json" --header "${auth_header}" --user-agent "lucos_arachne_ingestor" --silent --show-error --fail --location --output $tmp_file --dump-header "$response_headers"
+	content_type=$(grep -i '^Content-Type:' "$response_headers" | tail -1 | awk '{print $2}' | tr -d '\r')
 	# schema.org is referred to using http and https — standardise to https
 	sed -i 's~http://schema.org/~https://schema.org/~g' $tmp_file
 	# Delete everything in the triplestore for the given graph
 	curl "http://lucos_arachne:${KEY_LUCOS_ARACHNE}@triplestore:3030/raw_arachne/update" --user-agent "lucos_arachne_ingestor" --data-urlencode "update=DROP GRAPH <${url}>" --silent --show-error --fail > /dev/null
 	# Upload the fresh data to the triplestore
-	curl "http://lucos_arachne:${KEY_LUCOS_ARACHNE}@triplestore:3030/raw_arachne/data?graph=${url}" --user-agent "lucos_arachne_ingestor" --silent --show-error --fail --form "file=@${tmp_file}" | grep tripleCount
+	curl "http://lucos_arachne:${KEY_LUCOS_ARACHNE}@triplestore:3030/raw_arachne/data?graph=${url}" --header "Content-Type: ${content_type}" --user-agent "lucos_arachne_ingestor" --silent --show-error --fail --data "@${tmp_file}" | grep tripleCount
 	rm $tmp_file
+	rm $response_headers
 done
 
 # Check for any graphs in the triplestore which aren't in our list here, and delete them
