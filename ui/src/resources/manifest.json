@@ -1,0 +1,23 @@
+{
+	"name": "lucOS Arachne",
+	"short_name": "Arachne",
+	"start_url": "/",
+	"scope": "/",
+	"display": "standalone",
+	"theme_color": "#02666d",
+	"background_color": "#d8fff0",
+	"icons":[
+		{
+			"src": "/icon.png",
+			"sizes": "1253x1253",
+			"type": "image/png",
+			"purpose": "any"
+		},
+		{
+			"src": "/maskable_icon.png",
+			"sizes": "1670x1670",
+			"type": "image/png",
+			"purpose": "maskable"
+		}
+	]
+}
