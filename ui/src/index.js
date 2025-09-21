@@ -40,6 +40,7 @@ app.get('/_info', catchErrors(async (req, res) => {
 			headers: {
 				Authorization: `Basic ${btoa(`lucos_arachne:${process.env.KEY_LUCOS_ARACHNE}`)}`,
 			},
+			signal: AbortSignal.timeout(900),
 		});
 		const data = await response.json();
 		const triplecount = parseInt(data.results.bindings[0].triplecount.value);
