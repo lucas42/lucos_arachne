@@ -36,6 +36,19 @@ services:
       - KEY_LUCOS_ARACHNE
     depends_on:
       - triplestore
+  search:
+    build: search
+    container_name: lucos_arachne_search
+    environment:
+      - TYPESENSE_ADMIN_KEY
+      - CLIENT_KEYS
+      - PORT=8108
+    volumes:
+      - typesense_data:/data
+    ports:
+      - "8108:8108"
+
 
 volumes:
   fuseki_data:
+  typesense_data:
