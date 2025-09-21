@@ -24,6 +24,7 @@ services:
       - KEY_LUCOS_MEDIA_METADATA_API
     depends_on:
       - triplestore
+      - search
   ui:
     build: ui
     container_name: lucos_arachne_ui
@@ -39,6 +40,7 @@ services:
   search:
     build: search
     container_name: lucos_arachne_search
+    image: lucas42/lucos_arachne_search
     environment:
       - TYPESENSE_ADMIN_KEY
       - CLIENT_KEYS
