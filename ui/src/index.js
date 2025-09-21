@@ -14,14 +14,14 @@ app.get('/_info', catchErrors(async (req, res) => {
 	const output ={
 		system: 'lucos_arachne',
 		checks: {
-			sparql: {
+			/*sparql: {
 				techDetail: 'Checks a query can be made to the sparql endpoint'
-			}
+			}*/
 		},
 		metrics: {
-			triples: {
+			/*triples: {
 				techDetail: 'Number of triples in default graph of triplestore',
-			},
+			},*/
 		},
 		ci: {
 			circle: "gh/lucas42/lucos_arachne",
@@ -31,7 +31,8 @@ app.get('/_info', catchErrors(async (req, res) => {
 		show_on_homepage: true,
 		icon: "/icon.png",
 	};
-	try {
+	// Commenting out as it's being extremely flakey and filling up my inbox
+	/*try {
 		const body = new URLSearchParams();
 		body.append("query", "SELECT (COUNT(*) as ?triplecount) \nWHERE { ?s ?p ?o } ");
 		const response = await fetch("http://triplestore:3030/arachne/", {
@@ -50,7 +51,7 @@ app.get('/_info', catchErrors(async (req, res) => {
 		output.checks.sparql.ok = false;
 		output.checks.sparql.debug = error.message
 		delete output.metrics.triples;
-	}
+	}*/
 
 	res.json(output);
 }));
