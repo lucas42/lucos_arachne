@@ -1,8 +1,12 @@
-FROM alpine:3.22.1
+FROM python:3.13.7-alpine3.22
 
-RUN apk add --update curl bash
-COPY ingest.sh .
+RUN echo "15 * * * * root cd `pwd` && /usr/local/bin/pipenv --quiet run python -u ingest.py >> /var/log/cron.log 2>&1" | crontab -
+COPY startup.sh .
 
-RUN echo "15 * * * * /ingest.sh" | crontab -
+RUN pip install pipenv
+COPY Pipfile* ./
+RUN pipenv install
 
-CMD ["crond", "-f"]
+COPY ingest.py .
+
+CMD [ "./startup.sh"]
