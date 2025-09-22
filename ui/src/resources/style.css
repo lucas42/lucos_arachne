@@ -38,3 +38,10 @@ body {
 .yasgui .autocompleteWrapper {
 	display: none !important;
 }
+.yasgui .errorResult pre {
+	color: #ffffff;
+	background: #99000099;
+	font-weight: bold;
+	text-align: center;
+	padding: 10px;
+}
