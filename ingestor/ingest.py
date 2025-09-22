@@ -24,12 +24,12 @@ urls = {
 	"foaf": "http://xmlns.com/foaf/spec/",
 	"time": "https://www.w3.org/2006/time",
 	"dbpedia_meanOfTransportation": "https://dbpedia.org/ontology/MeanOfTransportation",
-	"skos": "http://www.w3.org/2004/02/skos/core#",
+	"skos": "http://www.w3.org/2004/02/skos/core",
 	"owl": "https://www.w3.org/2002/07/owl",
 	"dc": "http://purl.org/dc/terms/",
 	"dcam": "http://purl.org/dc/dcam/",
-	"rdf": "http://www.w3.org/1999/02/22-rdf-syntax-ns#",
-	"rdfs": "http://www.w3.org/2000/01/rdf-schema#",
+	"rdf": "http://www.w3.org/1999/02/22-rdf-syntax-ns",
+	"rdfs": "http://www.w3.org/2000/01/rdf-schema",
 }
 
 session = requests.Session()
