@@ -7,6 +7,6 @@ if (window.location.search) {
 	window.history.pushState(true, null, window.location.pathname);
 }
 new Yasgui(document.getElementById("yasgui"), {
-	requestConfig: { endpoint: "/sparql" },
+	requestConfig: { endpoint: window.location.origin+"/sparql" },
 	copyEndpointOnNewTab: false,
 });
