@@ -2,6 +2,9 @@ import express from 'express';
 import { middleware as authMiddleware } from './auth.js';
 import { createProxyMiddleware } from "http-proxy-middleware";
 
+export class BadRequestError extends Error { }
+export class AuthError extends Error { }
+
 const app = express();
 app.auth = authMiddleware;
 const port = process.env.PORT;
@@ -56,6 +59,36 @@ app.get('/_info', catchErrors(async (req, res) => {
 	res.json(output);
 }));
 
+// Do this before auth middleware as the authnentication is done with API keys (which get passed through to the search engine to check)
+app.get('/basic-search', catchErrors(async (req, res) => {
+	if (!req.query.q) throw new BadRequestError("No `q` query parameter given");
+	const auth = req.headers["authorization"];
+	if (!auth) throw new BadRequestError("Authorization header not set");
+	const [auth_type, auth_val] = auth.split(" ", 2);
+	if (auth_type != 'key') throw new AuthError(`Unrecognised authorization type ${auth_type}`);
+	if (!auth_val) throw new AuthError("No key found in Authorization header");
+	const queryParams = new URLSearchParams({
+		q: req.query.q,
+		query_by: "pref_label,labels,description,lyrics",
+		query_by_weights: "10,8,3,1",
+		sort_by: "_text_match:desc,pref_label:asc",
+		prioritize_num_matching_fields: false,
+		include_fields: "pref_label,type"
+	});
+	if (req.query.page) queryParams.set("page", req.query.page);
+	// TODO: add filter_by param if req.query.type is set
+	const response = await fetch("http://search:8108/collections/items/documents/search?"+queryParams.toString(), {
+		headers: { 'X-TYPESENSE-API-KEY': auth_val },
+		signal: AbortSignal.timeout(900),
+	});
+	const data = await response.json();
+	if (!response.ok) {
+		if (response.status == 401 || response.status == 403) throw new AuthError("Invalid API key given");
+		throw new Error(`Recieved ${response.status} error from backend: ${data["message"]}`);
+	}
+	res.json(data);
+}));
+
 app.use((req, res, next) => app.auth(req, res, next));
 
 app.get('/', catchErrors(async (req, res) => {
@@ -69,6 +102,22 @@ app.use(
 		auth: `lucos_arachne:${process.env.KEY_LUCOS_ARACHNE}`,
 	})
 );
+
+// Error Handler
+app.use((error, req, res, next) => {
+
+	// Set the status based on the type of error
+	if (error instanceof BadRequestError) {
+		res.status(400);
+	} else if(error instanceof AuthError) {
+		res.status(401);
+	} else {
+		res.status(500);
+		console.error(error.stack);
+	}
+
+	res.json({errorMessage: error.message});
+});
 
 app.listen(port, () => {
 	console.log(`UI listening on port ${port}`)
