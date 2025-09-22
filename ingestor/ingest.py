@@ -7,7 +7,7 @@ import os
 import sys
 import requests
 import re
-from rdflib import Graph, Namespace, RDF, RDFS, Literal
+from rdflib import Graph, Namespace, RDF, RDFS, FOAF, Literal
 import typesense
 
 # Common namespaces
@@ -164,9 +164,10 @@ def graph_to_typesense_docs(graph: Graph):
 				break
 
 		# labels (can be multiple)
-		for o in graph.objects(subj, RDFS.label):
-			if isinstance(o, Literal):
-				doc["labels"].append(str(o))
+		for pred in [RDFS.label, FOAF.name]:
+			for obj in graph.objects(subj, pred):
+				if isinstance(obj, Literal):
+					doc["labels"].append(str(obj))
 
 		# description
 		for o in graph.objects(subj, DC.description):
