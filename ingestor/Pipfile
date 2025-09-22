@@ -5,6 +5,8 @@ name = "pypi"
 
 [packages]
 requests = "*"
+rdflib = "*"
+typesense = "*"
 
 [dev-packages]
 
