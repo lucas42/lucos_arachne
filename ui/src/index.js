@@ -60,6 +60,15 @@ app.get('/_info', catchErrors(async (req, res) => {
 }));
 
 // Do this before auth middleware as the authnentication is done with API keys (which get passed through to the search engine to check)
+app.use('/basic-search', catchErrors(async (req, res, next) => {
+	if (req.method != 'OPTIONS') return next();
+	res.set({
+		"Access-Control-Allow-Methods": "GET",
+		"Access-Control-Allow-Headers": "Authorization",
+		"Access-Control-Allow-Origin": "*",
+	});
+	res.status(204).send();
+}));
 app.get('/basic-search', catchErrors(async (req, res) => {
 	if (!req.query.q) throw new BadRequestError("No `q` query parameter given");
 	const auth = req.headers["authorization"];
@@ -126,6 +135,6 @@ app.listen(port, () => {
 // Wrapper for controller async functions which catches errors and sends them on to express' error handling
 function catchErrors(controllerFunc) {
 	return ((req, res, next) => {
-		controllerFunc(req, res).catch(error => next(error));
+		controllerFunc(req, res, next).catch(error => next(error));
 	});
 }
