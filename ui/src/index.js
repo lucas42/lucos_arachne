@@ -70,6 +70,7 @@ app.use('/basic-search', catchErrors(async (req, res, next) => {
 	res.status(204).send();
 }));
 app.get('/basic-search', catchErrors(async (req, res) => {
+	res.set("Access-Control-Allow-Origin", "*");
 	if (!req.query.q) throw new BadRequestError("No `q` query parameter given");
 	const auth = req.headers["authorization"];
 	if (!auth) throw new BadRequestError("Authorization header not set");
