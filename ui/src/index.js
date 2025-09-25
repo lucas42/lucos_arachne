@@ -83,7 +83,7 @@ app.get('/basic-search', catchErrors(async (req, res) => {
 		query_by_weights: "10,8,3,1",
 		sort_by: "_text_match:desc,pref_label:asc",
 		prioritize_num_matching_fields: false,
-		include_fields: "pref_label,type"
+		include_fields: "id,pref_label,type"
 	});
 	if (req.query.page) queryParams.set("page", req.query.page);
 	// TODO: add filter_by param if req.query.type is set
