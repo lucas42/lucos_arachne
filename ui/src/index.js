@@ -93,6 +93,9 @@ app.get('/basic-search', catchErrors(async (req, res) => {
 	if (req.query.exclude_types) {
 		filters.push(`type:![${req.query.exclude_types}]`);
 	}
+	if (req.query.ids) {
+		filters.push(`id:[${req.query.ids}]`);
+	}
 	if (filters.length > 0) {
 		queryParams.set("filter_by", filters.join(" && "))
 	}
