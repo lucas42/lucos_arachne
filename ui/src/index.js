@@ -86,7 +86,16 @@ app.get('/basic-search', catchErrors(async (req, res) => {
 		include_fields: "id,pref_label,type"
 	});
 	if (req.query.page) queryParams.set("page", req.query.page);
-	// TODO: add filter_by param if req.query.type is set
+	const filters = [];
+	if (req.query.types) {
+		filters.push(`type:[${req.query.types}]`);
+	}
+	if (req.query.exclude_types) {
+		filters.push(`type:![${req.query.exclude_types}]`);
+	}
+	if (filters.length > 0) {
+		queryParams.set("filter_by", filters.join(" && "))
+	}
 	const response = await fetch("http://search:8108/collections/items/documents/search?"+queryParams.toString(), {
 		headers: { 'X-TYPESENSE-API-KEY': auth_val },
 		signal: AbortSignal.timeout(900),
