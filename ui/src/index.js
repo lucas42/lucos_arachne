@@ -95,6 +95,7 @@ app.get('/basic-search', catchErrors(async (req, res) => {
 	}
 	if (req.query.ids) {
 		filters.push(`id:[${req.query.ids}]`);
+		queryParams.set("per_page", req.query.ids.split(',').length)
 	}
 	if (filters.length > 0) {
 		queryParams.set("filter_by", filters.join(" && "))
