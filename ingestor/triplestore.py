@@ -34,19 +34,17 @@ def update_triplestore(graph_url, content, content_type):
 	except ValueError:
 		print(f"Upload complete for graph <{graph_url}>, but response was not JSON")
 
+# Cleans up any graphs in the triplestore which aren't in the list provided
 def cleanup_triplestore(graph_uris):
-	# Cleanup graphs not in list
-	# This uses the CSV output because it was ported from bash and that was easier to parse there
-	# TODO: Use json output instead
 	resp = session.post(
 		"http://triplestore:3030/raw_arachne/sparql",
-		headers={"Accept": "text/csv"},
-		data={"query": "SELECT * WHERE {GRAPH ?g{}}"},
+		headers={"Accept": "application/json"},
+		data={"query": "SELECT * WHERE {GRAPH ?graph{}}"},
 	)
 	resp.raise_for_status()
-	lines = resp.text.strip().splitlines()[1:]  # skip header
-	for line in lines:
-		graph_uri = line.strip()
+	graphlist = resp.json()
+	for binding in graphlist['results']['bindings']:
+		graph_uri = binding['graph']['value']
 		if graph_uri not in graph_uris:
 			print(f"Deleting unknown graph <{graph_uri}>")
 			session.post(
