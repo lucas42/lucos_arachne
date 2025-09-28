@@ -52,15 +52,18 @@ def replace_graph_in_triplestore(graph_uri, content, content_type):
 	print(drop_resp.text)
 	add_triples(graph_uri, content, content_type)
 
-def replace_item_in_triplestore(item_uri, graph_uri, content, content_type):
-	# Drop triples where the given item is the subject
-	print(f"DELETE WHERE {{ GRAPH <{graph_uri}> {{ <{item_uri}> ?p ?o }} }}")
+# Drop triples where the given item is the subject
+def delete_item_in_triplestore(item_uri, graph_uri):
 	drop_resp = session.post(
 		"http://triplestore:3030/raw_arachne/update",
 		headers={"Content-Type": "application/sparql-update"},
 		data=f"DELETE WHERE {{ GRAPH <{graph_uri}> {{ <{item_uri}> ?p ?o }} }}",
 	)
 	drop_resp.raise_for_status()
+
+
+def replace_item_in_triplestore(item_uri, graph_uri, content, content_type):
+	delete_item_in_triplestore(item_uri, graph_uri)
 	add_triples(graph_uri, content, content_type)
 
 

@@ -2,8 +2,8 @@
 import json, sys, os, traceback
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from authorised_fetch import fetch_url
-from triplestore import systems_to_graphs, replace_item_in_triplestore
-from searchindex import update_searchindex
+from triplestore import systems_to_graphs, replace_item_in_triplestore, delete_item_in_triplestore
+from searchindex import update_searchindex, delete_doc_in_searchindex
 
 if not os.environ.get("PORT"):
 	sys.exit("\033[91mPORT not set\033[0m")
@@ -40,6 +40,13 @@ class WebhookHandler(BaseHTTPRequestHandler):
 				self.send_header("Content-type", "text/plain")
 				self.end_headers()
 				self.wfile.write(bytes("Updated", "utf-8"))
+			if event["type"].endswith("Deleted"):
+				delete_item_in_triplestore(event["url"], systems_to_graphs[event["source"]])
+				delete_doc_in_searchindex(event["source"], event["url"])
+				self.send_response(200, "OK")
+				self.send_header("Content-type", "text/plain")
+				self.end_headers()
+				self.wfile.write(bytes("Deleted", "utf-8"))
 			else:
 				self.send_error(404, "Webhook type Not Found")
 		except Exception as error:

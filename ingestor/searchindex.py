@@ -1,6 +1,7 @@
 import os, sys
 from rdflib import Graph, Namespace, RDF, RDFS, FOAF, SKOS, DC, Literal
 import typesense
+import urllib.parse
 
 # Namespace not included in rdflib
 MO = Namespace("http://purl.org/ontology/mo/")
@@ -113,3 +114,11 @@ def update_searchindex(system, content, content_type):
 		if not result["success"]:
 			raise Error(f"Error returned from search index upsert: {result["error"]}")
 	print(f"Upserted {len(results)} documents to triplestore from {system}")
+
+def delete_doc_in_searchindex(system, doc_id):
+	if not system.startswith("lucos_"):
+		return
+
+	# Typesense library doesn't do escaping when it's needed.
+	escaped_id = urllib.parse.quote_plus(doc_id)
+	typesense_client.collections["items"].documents[escaped_id].delete()
