@@ -5,7 +5,7 @@ Bulk ingests RDF from other systems and adds data to the triplestore and searchi
 import sys, os
 import requests
 from authorised_fetch import fetch_url
-from triplestore import update_triplestore, cleanup_triplestore
+from triplestore import systems_to_graphs, replace_graph_in_triplestore, cleanup_triplestore
 from searchindex import update_searchindex
 
 SCHEDULE_TRACKER_ENDPOINT = os.environ.get("SCHEDULE_TRACKER_ENDPOINT")
@@ -18,25 +18,11 @@ session.headers.update({
 
 if __name__ == "__main__":
 	try:
-		urls = {
-			"lucos_eolas": "https://eolas.l42.eu/metadata/all/data/",
-			"lucos_contacts": "https://contacts.l42.eu/people/all",
-			"lucos_media_metadata_api": "https://media-api.l42.eu/v2/export",
-			"foaf": "http://xmlns.com/foaf/spec/",
-			"time": "https://www.w3.org/2006/time",
-			"dbpedia_meanOfTransportation": "https://dbpedia.org/ontology/MeanOfTransportation",
-			"skos": "http://www.w3.org/2004/02/skos/core",
-			"owl": "https://www.w3.org/2002/07/owl",
-			"dc": "http://purl.org/dc/terms/",
-			"dcam": "http://purl.org/dc/dcam/",
-			"rdf": "http://www.w3.org/1999/02/22-rdf-syntax-ns",
-			"rdfs": "http://www.w3.org/2000/01/rdf-schema",
-		}
-		for system, url in urls.items():
+		for system, url in systems_to_graphs.items():
 			(content, content_type) = fetch_url(system, url)
-			update_triplestore(url, content, content_type)
+			replace_graph_in_triplestore(url, content, content_type)
 			update_searchindex(system, content, content_type)
-		cleanup_triplestore(urls.values())
+		cleanup_triplestore(systems_to_graphs.values())
 
 		# Loganne
 		session.post(

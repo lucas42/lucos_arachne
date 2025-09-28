@@ -4,9 +4,8 @@ services:
       context: ./triplestore
     container_name: lucos_arachne_triplestore
     image: lucas42/lucos_arachne_triplestore
-    ports:
-      - "3030:3030"
     environment:
+      - PORT=3030
       - CLIENT_KEYS
     volumes:
       - fuseki_data:/fuseki/run/databases
@@ -16,6 +15,7 @@ services:
     container_name: lucos_arachne_ingestor
     image: lucas42/lucos_arachne_ingestor
     environment:
+      - PORT=8099
       - LOGANNE_ENDPOINT
       - SCHEDULE_TRACKER_ENDPOINT
       - KEY_LUCOS_ARACHNE
@@ -47,8 +47,6 @@ services:
       - PORT=8108
     volumes:
       - typesense_data:/data
-    ports:
-      - "8108:8108"
 
 
 volumes:

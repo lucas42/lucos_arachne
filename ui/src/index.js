@@ -112,6 +112,13 @@ app.get('/basic-search', catchErrors(async (req, res) => {
 	res.json(data);
 }));
 
+app.use(
+	"/webhook",
+	createProxyMiddleware({
+		target: "http://ingestor:8099/webhook",
+	})
+);
+
 app.use((req, res, next) => app.auth(req, res, next));
 
 app.get('/', catchErrors(async (req, res) => {

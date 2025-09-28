@@ -18,6 +18,10 @@ def fetch_url(system, url):
 			)
 		auth_header = {"Authorization": f"key {key}"}
 
+	# In dev environment, where URLs can be referencing localhost, switch domain to the docker internal domain to allow requests between containers
+	if url.startswith("http://localhost:"):
+		url = url.replace("http://localhost:", "http://host.docker.internal:")
+
 	print(f"Ingesting data from {url}")
 
 	# Fetch data
