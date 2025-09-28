@@ -7,6 +7,6 @@ RUN pip install pipenv
 COPY Pipfile* ./
 RUN pipenv install
 
-COPY ingest.py .
+COPY *.py .
 
 CMD [ "./startup.sh"]
