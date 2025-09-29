@@ -32,7 +32,7 @@ class WebhookHandler(BaseHTTPRequestHandler):
 			self.send_error(400, "Invalid json", str(error))
 			return
 		try:
-			if event["type"].endswith("Created") or event["type"].endswith("Updated"):
+			if event["type"].endswith("Created") or event["type"].endswith("Added") or event["type"].endswith("Updated"):
 				(content, content_type) = fetch_url(event["source"], event["url"])
 				replace_item_in_triplestore(event["url"], systems_to_graphs[event["source"]], content, content_type)
 				update_searchindex(event["source"], content, content_type)
