@@ -59,59 +59,6 @@ app.get('/_info', catchErrors(async (req, res) => {
 	res.json(output);
 }));
 
-// Do this before auth middleware as the authnentication is done with API keys (which get passed through to the search engine to check)
-app.use('/basic-search', catchErrors(async (req, res, next) => {
-	if (req.method != 'OPTIONS') return next();
-	res.set({
-		"Access-Control-Allow-Methods": "GET",
-		"Access-Control-Allow-Headers": "Authorization",
-		"Access-Control-Allow-Origin": "*",
-	});
-	res.status(204).send();
-}));
-app.get('/basic-search', catchErrors(async (req, res) => {
-	res.set("Access-Control-Allow-Origin", "*");
-	if (!req.query.q) throw new BadRequestError("No `q` query parameter given");
-	const auth = req.headers["authorization"];
-	if (!auth) throw new BadRequestError("Authorization header not set");
-	const [auth_type, auth_val] = auth.split(" ", 2);
-	if (auth_type != 'key') throw new AuthError(`Unrecognised authorization type ${auth_type}`);
-	if (!auth_val) throw new AuthError("No key found in Authorization header");
-	const queryParams = new URLSearchParams({
-		q: req.query.q,
-		query_by: "pref_label,labels,description,lyrics",
-		query_by_weights: "10,8,3,1",
-		sort_by: "_text_match:desc,pref_label:asc",
-		prioritize_num_matching_fields: false,
-		include_fields: "id,pref_label,type"
-	});
-	if (req.query.page) queryParams.set("page", req.query.page);
-	const filters = [];
-	if (req.query.types) {
-		filters.push(`type:[${req.query.types}]`);
-	}
-	if (req.query.exclude_types) {
-		filters.push(`type:![${req.query.exclude_types}]`);
-	}
-	if (req.query.ids) {
-		filters.push(`id:[${req.query.ids}]`);
-		queryParams.set("per_page", req.query.ids.split(',').length)
-	}
-	if (filters.length > 0) {
-		queryParams.set("filter_by", filters.join(" && "))
-	}
-	const response = await fetch("http://search:8108/collections/items/documents/search?"+queryParams.toString(), {
-		headers: { 'X-TYPESENSE-API-KEY': auth_val },
-		signal: AbortSignal.timeout(900),
-	});
-	const data = await response.json();
-	if (!response.ok) {
-		if (response.status == 401 || response.status == 403) throw new AuthError("Invalid API key given");
-		throw new Error(`Recieved ${response.status} error from backend: ${data["message"]}`);
-	}
-	res.json(data);
-}));
-
 app.use(
 	"/search",
 	createProxyMiddleware({
