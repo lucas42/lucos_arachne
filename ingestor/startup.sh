@@ -8,4 +8,5 @@ printenv | sed 's/"/\\"/g' | sed 's/=/="/g' | sed 's/$/"/g' > .env
 /usr/sbin/crond
 cat <> /var/log/cron.log&
 
-pipenv run python -u server.py
+pipenv --quiet run python -u ingest.py &
+pipenv --quiet run python -u server.py
