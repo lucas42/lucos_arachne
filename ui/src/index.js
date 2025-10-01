@@ -113,6 +113,12 @@ app.get('/basic-search', catchErrors(async (req, res) => {
 }));
 
 app.use(
+	"/search",
+	createProxyMiddleware({
+		target: "http://search:8108/collections/items/documents/search",
+	})
+);
+app.use(
 	"/webhook",
 	createProxyMiddleware({
 		target: "http://ingestor:8099/webhook",
