@@ -6,7 +6,13 @@ import "@zazuko/yasgui/build/yasgui.min.css";
 if (window.location.search) {
 	window.history.pushState(true, null, window.location.pathname);
 }
-new Yasgui(document.getElementById("yasgui"), {
-	requestConfig: { endpoint: window.location.origin+"/sparql" },
+const yasgui_container = document.getElementById("yasgui");
+new Yasgui(yasgui_container, {
+	requestConfig: {
+		endpoint: window.location.origin+"/sparql",
+		headers: () => ({
+			Authorization: `basic ${yasgui_container.dataset.auth}`,
+		}),
+	},
 	copyEndpointOnNewTab: false,
 });

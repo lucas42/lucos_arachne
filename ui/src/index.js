@@ -71,20 +71,21 @@ app.use(
 		target: "http://ingestor:8099/webhook",
 	})
 );
-
-app.use((req, res, next) => app.auth(req, res, next));
-
-app.get('/', catchErrors(async (req, res) => {
-	res.render('index', {});
-}));
-
 app.use(
 	"/sparql",
 	createProxyMiddleware({
 		target: "http://triplestore:3030/arachne/",
-		auth: `lucos_arachne:${process.env.KEY_LUCOS_ARACHNE}`,
 	})
 );
+
+app.use((req, res, next) => app.auth(req, res, next));
+
+app.get('/', catchErrors(async (req, res) => {
+	res.render('index', {
+		sparql_auth: Buffer.from(`lucos_arachne:${process.env.KEY_LUCOS_ARACHNE}`).toString('base64'),
+	});
+}));
+
 
 // Error Handler
 app.use((error, req, res, next) => {
