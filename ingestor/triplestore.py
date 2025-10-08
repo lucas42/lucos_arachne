@@ -19,6 +19,8 @@ systems_to_graphs = {
 	"dcam": "http://purl.org/dc/dcam/",
 	"rdf": "http://www.w3.org/1999/02/22-rdf-syntax-ns",
 	"rdfs": "http://www.w3.org/2000/01/rdf-schema",
+	"loc_iso639-5": "http://id.loc.gov/vocabulary/iso639-5/iso639-5_Language",
+	"loc_mads": "http://www.loc.gov/mads/rdf/v1",
 }
 
 session = requests.Session()

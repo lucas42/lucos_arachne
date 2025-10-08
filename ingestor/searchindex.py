@@ -18,6 +18,8 @@ TYPE_LABELS = {
 	"http://www.w3.org/2000/01/rdf-schema#Class": "Class",
 	"http://www.w3.org/2002/07/owl#DatatypeProperty": "Datatype Property",
 	"http://www.w3.org/2002/07/owl#Ontology": "Ontology",
+	"http://id.loc.gov/vocabulary/iso639-5/iso639-5_Language": "Language Family",
+	"http://www.loc.gov/mads/rdf/v1#Language": "Language",
 }
 
 KEY_LUCOS_ARACHNE = os.environ.get("KEY_LUCOS_ARACHNE")
