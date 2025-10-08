@@ -104,7 +104,8 @@ else
 				{"name": "pref_label", "type": "string", "full_text_search": true, "sort": true},
 				{"name": "labels", "type": "string[]", "optional": true, "full_text_search": true},
 				{"name": "description", "type": "string", "optional": true, "full_text_search": true},
-				{"name": "lyrics", "type": "string", "optional": true, "full_text_search": true}
+				{"name": "lyrics", "type": "string", "optional": true, "full_text_search": true},
+				{"name": "lang_family", "type": "string", "optional": true}
 			],
 			"default_sorting_field":"pref_label"
 		}' --silent --show-error --fail-with-body

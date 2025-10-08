@@ -5,6 +5,7 @@ import urllib.parse
 
 # Namespace not included in rdflib
 MO = Namespace("http://purl.org/ontology/mo/")
+LOC_NS = Namespace("http://www.loc.gov/mads/rdf/v1#")
 
 # Hardcoded type mapping
 TYPE_LABELS = {
@@ -56,6 +57,7 @@ def graph_to_typesense_docs(graph: Graph):
 			"labels": [],
 			"description": None,
 			"lyrics": None,
+			"lang_family": None,
 		}
 
 		# type (exactly one, from hardcoded mapping only)
@@ -86,6 +88,10 @@ def graph_to_typesense_docs(graph: Graph):
 			if isinstance(o, Literal):
 				doc["lyrics"] = str(o)
 				break
+
+		for o in graph.objects(subj, LOC_NS.hasBroaderExternalAuthority):
+			doc["lang_family"] = str(o).split('/')[-1]
+			break
 
 		# only include if we have a type and pref_label
 		if doc["type"] and doc["pref_label"]:
