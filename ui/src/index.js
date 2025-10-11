@@ -1,6 +1,5 @@
 import express from 'express';
 import { middleware as authMiddleware } from './auth.js';
-import { createProxyMiddleware } from "http-proxy-middleware";
 
 export class BadRequestError extends Error { }
 export class AuthError extends Error { }
@@ -58,25 +57,6 @@ app.get('/_info', catchErrors(async (req, res) => {
 
 	res.json(output);
 }));
-
-app.use(
-	"/search",
-	createProxyMiddleware({
-		target: "http://search:8108/collections/items/documents/search",
-	})
-);
-app.use(
-	"/webhook",
-	createProxyMiddleware({
-		target: "http://ingestor:8099/webhook",
-	})
-);
-app.use(
-	"/sparql",
-	createProxyMiddleware({
-		target: "http://triplestore:3030/arachne/",
-	})
-);
 
 app.use((req, res, next) => app.auth(req, res, next));
 

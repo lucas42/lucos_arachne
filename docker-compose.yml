@@ -1,4 +1,16 @@
 services:
+  web:
+    build: ./web
+    container_name: lucos_arachne_web
+    ports:
+      - "8033:8033"
+    image: lucas42/lucos_arachne_web
+    restart: always
+    depends_on:
+      - triplestore
+      - search
+      - ingestor
+      - ui
   triplestore:
     build:
       context: ./triplestore
@@ -9,7 +21,6 @@ services:
       - CLIENT_KEYS
     volumes:
       - fuseki_data:/fuseki/run/databases
-
   ingestor:
     build: ./ingestor
     container_name: lucos_arachne_ingestor
@@ -30,15 +41,11 @@ services:
   ui:
     build: ui
     container_name: lucos_arachne_ui
-    ports:
-      - "8033:8033"
     image: lucas42/lucos_arachne_ui
     restart: always
     environment:
       - PORT=8033
       - KEY_LUCOS_ARACHNE
-    depends_on:
-      - triplestore
   search:
     build: search
     container_name: lucos_arachne_search
