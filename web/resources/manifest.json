@@ -1,8 +1,8 @@
 {
 	"name": "lucOS Arachne",
 	"short_name": "Arachne",
-	"start_url": "/",
-	"scope": "/",
+	"start_url": "/explore",
+	"scope": "/explore",
 	"display": "standalone",
 	"theme_color": "#02666d",
 	"background_color": "#d8fff0",

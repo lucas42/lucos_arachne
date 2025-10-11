@@ -10,7 +10,7 @@ services:
       - triplestore
       - search
       - ingestor
-      - ui
+      - explore
   triplestore:
     build:
       context: ./triplestore
@@ -38,10 +38,10 @@ services:
         condition: service_started
       search:
         condition: service_healthy
-  ui:
-    build: ui
-    container_name: lucos_arachne_ui
-    image: lucas42/lucos_arachne_ui
+  explore:
+    build: explore
+    container_name: lucos_arachne_explore
+    image: lucas42/lucos_arachne_explore
     restart: always
     environment:
       - PORT=8033

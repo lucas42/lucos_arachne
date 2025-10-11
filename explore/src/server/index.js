@@ -7,23 +7,6 @@ app.auth = authMiddleware;
 app.set('view engine', 'ejs');
 app.use(express.static('./resources', {extensions: ['json']}));
 
-// Avoid authentication for _info, so call before invoking auth middleware
-app.get('/_info', catchErrors(async (req, res) => {
-	const output ={
-		system: 'lucos_arachne',
-		checks: {},
-		metrics: {},
-		ci: {
-			circle: "gh/lucas42/lucos_arachne",
-		},
-		network_only: true,
-		title: "Arachne",
-		show_on_homepage: true,
-		icon: "/icon.png",
-	};
-	res.json(output);
-}));
-
 app.use((req, res, next) => app.auth(req, res, next));
 
 app.get('/', catchErrors(async (req, res) => {
@@ -48,5 +31,5 @@ function catchErrors(controllerFunc) {
 
 const port = process.env.PORT;
 app.listen(port, () => {
-	console.log(`UI listening on port ${port}`)
+	console.log(`Explore UI listening on port ${port}`)
 });

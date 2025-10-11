@@ -11,12 +11,22 @@ updates:
     interval: daily
     time: "07:00"
 - package-ecosystem: docker
-  directory: "/ui"
+  directory: "/search"
+  schedule:
+    interval: daily
+    time: "07:00"
+- package-ecosystem: docker
+  directory: "/web"
+  schedule:
+    interval: daily
+    time: "07:00"
+- package-ecosystem: docker
+  directory: "/explore"
   schedule:
     interval: daily
     time: "07:00"
 - package-ecosystem: npm
-  directory: "/ui"
+  directory: "/explore"
   schedule:
     interval: daily
     time: "07:00"
