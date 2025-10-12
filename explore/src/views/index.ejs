@@ -13,7 +13,14 @@
 			<span class='tagline'>Explore the knowledge graph of the entire lucOS ecosystem</span>
 			<img src="/icon.png" class="icon" />
 		</div>
-		<div id='sparql-explorer'>
+		<div id='search' class="module">
+			<h2>Search</h2>
+			<form method='get' action='/explore/search'>
+				<input type='text' name='q' />
+				<input type='submit' value='Search' />
+			</form>
+		</div>
+		<div id='sparql-explorer' class="module">
 			<h2>Sparql Explorer</h2>
 			<div id="yasgui" data-auth="<%= sparql_auth %>"></div>
 		</div>

@@ -1,0 +1,26 @@
+<html>
+	<head>
+		<title>LucOs Arachne</title>
+		<meta name="viewport" content="initial-scale=1.0, user-scalable=no, width=device-width" />
+		<link href="/explore/style.css" rel="stylesheet" />
+		<link rel="icon" href="/icon.png" />
+		<link rel="manifest" href="/manifest.json" />
+	</head>
+	<body>
+		<lucos-navbar bg-colour="#02666d">Search Results</lucos-navbar>
+		<a href="/explore">&lt;- Home</a>
+		<div class="module">
+			<h2>Results for "<%= request_params.q %>"</h2>
+			<ul class="results">
+				<% for(var ii = 0; ii < hits.length; ii++) {
+					const result = hits[ii];
+					const uri = result.document.id;
+				%>
+				<li><a href="<%= uri %>" target="_blank"><%= result.document.pref_label %> (<%= result.document.type %>)</a></li>
+				<% } %>
+			</ul>
+			<span class="count">Showing <%= hits.length %> results out of <%= found %></span>
+		</div>
+		<script type="text/javascript" src="/explore/client.js"></script>
+	</body>
+</html>

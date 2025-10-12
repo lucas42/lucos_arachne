@@ -18,19 +18,36 @@ body {
 	font-family: "Arial Black", Gadget, sans-serif;
 }
 
-#sparql-explorer {
+.module {
 	background: #f0fbff;
 	border: solid #555;
 	border-radius: 5px;
 	margin: 15px 0;
 }
-#sparql-explorer h2 {
+.module h2 {
 	margin: 0;
 	text-align: center;
 	background-color: #555;
 	color: #fff;
 	padding: 3px;
 	background-image: linear-gradient(transparent 10%, transparent 15%, rgba(0, 0, 0, 0.4) 100%);
+}
+#search form {
+	margin: 20px;
+	display: flex;
+}
+#search form input {
+	flex: 1;
+	margin: 0 20px;
+}
+#search form input[type=submit] {
+	flex: 0.2;
+}
+.count {
+	padding: 10px;
+	font-style: italic;
+	text-align: right;
+	display: block;
 }
 #sparql-explorer .yasgui {
 	margin: 10px;
