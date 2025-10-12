@@ -43,6 +43,6 @@ export async function middleware(req, res, next) {
 
 		// If no token was given, or the token wasn't successfully verified, send the user to the authentication service to log in
 		const protocol = req.query['X-Forwarded-Proto'] || 'http';
-		return res.redirect(302, "https://auth.l42.eu/authenticate?redirect_uri="+encodeURIComponent(protocol+'://'+req.headers.host+req.originalUrl));
+		return res.redirect(302, "https://auth.l42.eu/authenticate?redirect_uri="+encodeURIComponent(`${protocol}://${req.headers.host}/explore${req.originalUrl}`));
 	}
 }
