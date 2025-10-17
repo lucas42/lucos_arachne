@@ -1,13 +1,13 @@
 FROM openjdk:18-jdk-slim
 
 # Install Fuseki from source
-RUN apt-get update && apt-get install -y wget unzip gettext-base
+RUN apt-get update && apt-get install -y wget gettext-base
 ENV FUSEKI_HOME=/fuseki
 ENV FUSEKI_VERSION=5.5.0
-RUN wget https://downloads.apache.org/jena/binaries/apache-jena-fuseki-${FUSEKI_VERSION}.zip && \
-    unzip apache-jena-fuseki-${FUSEKI_VERSION}.zip && \
+RUN wget https://archive.apache.org/dist/jena/binaries/apache-jena-fuseki-${FUSEKI_VERSION}.tar.gz && \
+    tar -xzf apache-jena-fuseki-${FUSEKI_VERSION}.tar.gz && \
     mv apache-jena-fuseki-${FUSEKI_VERSION} ${FUSEKI_HOME} && \
-    rm apache-jena-fuseki-${FUSEKI_VERSION}.zip
+    rm apache-jena-fuseki-${FUSEKI_VERSION}.tar.gz
 
 WORKDIR $FUSEKI_HOME
 ENV PATH=$PATH:$FUSEKI_HOME
