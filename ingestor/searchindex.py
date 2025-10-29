@@ -22,6 +22,7 @@ TYPE_LABELS = {
 	"http://id.loc.gov/vocabulary/iso639-5/iso639-5_Language": "Language Family",
 	"http://www.loc.gov/mads/rdf/v1#Language": "Language",
 	"https://dbpedia.org/ontology/EthnicGroup": "Ethnic Group",
+	"https://dbpedia.org/ontology/Season": "Season",
 }
 
 KEY_LUCOS_ARACHNE = os.environ.get("KEY_LUCOS_ARACHNE")
