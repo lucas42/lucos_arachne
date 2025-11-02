@@ -39,7 +39,8 @@ def get_type_label(graph, type_uri):
 
 	# Try dynamic lookup
 	for label in graph.objects(type_uri, SKOS.prefLabel):
-		return str(label)
+		if label.language is None or label.language == 'en':
+			return str(label)
 
 	raise ValueError(f"Unknown type URI encountered: {uri_str}")
 
