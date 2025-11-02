@@ -10,7 +10,7 @@ systems_to_graphs = {
 	"lucos_eolas": "https://eolas.l42.eu/metadata/all/data/",
 	"lucos_contacts": "https://contacts.l42.eu/people/all",
 	"lucos_media_metadata_api": "https://media-api.l42.eu/v2/export",
-	"foaf": "http://xmlns.com/foaf/spec/",
+	"foaf": "https://www.w3.org/archive/xmlns.com/foaf/0.1/ontology", # Canonically http://xmlns.com/foaf/spec/ — but it stopped working in November 2025, so have switched to w3's archive version
 	"time": "https://www.w3.org/2006/time",
 	"dbpedia_meanOfTransportation": "https://dbpedia.org/ontology/MeanOfTransportation",
 	"skos": "http://www.w3.org/2004/02/skos/core",
