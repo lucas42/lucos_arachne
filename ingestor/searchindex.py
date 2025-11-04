@@ -11,18 +11,11 @@ LOC_NS = Namespace("http://www.loc.gov/mads/rdf/v1#")
 TYPE_LABELS = {
 	"http://xmlns.com/foaf/0.1/Person": "Person",
 	"http://purl.org/ontology/mo/Track": "Track",
-	"http://www.w3.org/2006/time#DayOfWeek": "Day of Week",
-	"http://www.w3.org/2006/time#MonthOfYear": "Month of Year",
-	"https://dbpedia.org/ontology/MeanOfTransportation": "Means of Transport",
 	"http://www.w3.org/2002/07/owl#ObjectProperty": "Object Property",
 	"http://www.w3.org/2002/07/owl#Class": "Class",
 	"http://www.w3.org/2000/01/rdf-schema#Class": "Class",
 	"http://www.w3.org/2002/07/owl#DatatypeProperty": "Datatype Property",
 	"http://www.w3.org/2002/07/owl#Ontology": "Ontology",
-	"http://id.loc.gov/vocabulary/iso639-5/iso639-5_Language": "Language Family",
-	"http://www.loc.gov/mads/rdf/v1#Language": "Language",
-	"https://dbpedia.org/ontology/EthnicGroup": "Ethnic Group",
-	"https://dbpedia.org/ontology/Season": "Season",
 }
 
 KEY_LUCOS_ARACHNE = os.environ.get("KEY_LUCOS_ARACHNE")
