@@ -7,14 +7,15 @@ import urllib.parse
 MO = Namespace("http://purl.org/ontology/mo/")
 LOC_NS = Namespace("http://www.loc.gov/mads/rdf/v1#")
 
-# Hardcoded type mapping
-TYPE_LABELS = {
-	"http://www.w3.org/2002/07/owl#ObjectProperty": "Object Property",
-	"http://www.w3.org/2002/07/owl#Class": "Class",
-	"http://www.w3.org/2000/01/rdf-schema#Class": "Class",
-	"http://www.w3.org/2002/07/owl#DatatypeProperty": "Datatype Property",
-	"http://www.w3.org/2002/07/owl#Ontology": "Ontology",
-}
+
+# RDF/OWL types which shouldn't be indexed in search index
+IGNORE_TYPES = [
+	"http://www.w3.org/2002/07/owl#ObjectProperty",
+	"http://www.w3.org/2002/07/owl#Class",
+	"http://www.w3.org/2000/01/rdf-schema#Class",
+	"http://www.w3.org/2002/07/owl#DatatypeProperty",
+	"http://www.w3.org/2002/07/owl#Ontology",
+]
 
 KEY_LUCOS_ARACHNE = os.environ.get("KEY_LUCOS_ARACHNE")
 
@@ -24,16 +25,11 @@ if not KEY_LUCOS_ARACHNE:
 	)
 
 def get_type_label(graph, type_uri):
-	uri_str = str(type_uri)
-	if uri_str in TYPE_LABELS:
-		return TYPE_LABELS[uri_str]
-
-	# Try dynamic lookup
 	for label in graph.objects(type_uri, SKOS.prefLabel):
 		if label.language is None or label.language == 'en':
 			return str(label)
 
-	raise ValueError(f"Unknown type URI encountered: {uri_str}")
+	raise ValueError(f"Unknown type URI encountered: {type_uri}")
 
 
 def graph_to_typesense_docs(graph: Graph):
@@ -54,8 +50,10 @@ def graph_to_typesense_docs(graph: Graph):
 			"lang_family": None,
 		}
 
-		# type (exactly one, from hardcoded mapping only)
+		# type
 		for o in graph.objects(subj, RDF.type):
+			if str(o) in IGNORE_TYPES:
+				continue
 			doc["type"] = get_type_label(graph, o)
 			break
 
