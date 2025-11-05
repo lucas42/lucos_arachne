@@ -21,7 +21,7 @@
     "express": "^5.1.0"
   },
   "devDependencies": {
-    "@zazuko/yasgui": "^4.5.0",
+    "@zazuko/yasgui": "^4.6.0",
     "css-loader": "^7.1.2",
     "folder-hash": "^4.1.1",
     "lucos_navbar": "^2.0.15",
