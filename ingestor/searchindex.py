@@ -9,7 +9,6 @@ LOC_NS = Namespace("http://www.loc.gov/mads/rdf/v1#")
 
 # Hardcoded type mapping
 TYPE_LABELS = {
-	"http://xmlns.com/foaf/0.1/Person": "Person",
 	"http://purl.org/ontology/mo/Track": "Track",
 	"http://www.w3.org/2002/07/owl#ObjectProperty": "Object Property",
 	"http://www.w3.org/2002/07/owl#Class": "Class",
