@@ -25,7 +25,7 @@ def fetch_url(system, url):
 		return url
 
 	url = map_localhost(url)
-	print(f"Ingesting data from {url}")
+	print(f"Ingesting data from <{url}>")
 
 	# Fetch data
 	resp = session.get(

@@ -51,7 +51,6 @@ def replace_graph_in_triplestore(graph_uri, content, content_type):
 		data=f"DROP GRAPH <{graph_uri}>",
 	)
 	drop_resp.raise_for_status()
-	print(drop_resp.text)
 	add_triples(graph_uri, content, content_type)
 
 # Drop triples where the given item is the subject
