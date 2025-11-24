@@ -24,7 +24,7 @@
     "@zazuko/yasgui": "^4.6.0",
     "css-loader": "^7.1.2",
     "folder-hash": "^4.1.1",
-    "lucos_navbar": "^2.0.17",
+    "lucos_navbar": "^2.0.18",
     "style-loader": "^4.0.0",
     "webpack-cli": "^6.0.1"
   }
