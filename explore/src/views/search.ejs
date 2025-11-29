@@ -19,7 +19,16 @@
 				<li><a href="/explore/item?uri=<%= encodeURIComponent(uri) %>"><%= result.document.pref_label %> (<%= result.document.type %>)</a></li>
 				<% } %>
 			</ul>
-			<span class="count">Showing <%= hits.length %> results out of <%= found %></span>
+			<span class="count">Showing <%= hits.length %> results out of <%= found %>.  </span>
+			<nav class="pagination">
+				<% if (page > 1) { %>
+					<a href="/explore/search?q=<%= encodeURIComponent(request_params.q) %>&amp;page=<%= page - 1 %>">&lt;- Page <%= page - 1 %></a> |
+				<% } %>
+				<strong>Page <%= page %></strong>
+				<% if (page * request_params.per_page < found) { %>
+					| <a href="/explore/search?q=<%= encodeURIComponent(request_params.q) %>&amp;page=<%= page + 1 %>">Page <%= page + 1 %> -&gt;</a>
+				<% } %>
+			</nav>
 		</div>
 		<script type="text/javascript" src="/explore/client.js"></script>
 	</body>

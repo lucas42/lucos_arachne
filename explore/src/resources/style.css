@@ -65,3 +65,10 @@ body {
 .item-info {
 	margin: 10px;
 }
+nav.pagination {
+	text-align: center;
+	padding-bottom: 5px;
+}
+nav.pagination a {
+	color: LinkText; /* Override visited link colours etc */
+}

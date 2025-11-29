@@ -29,6 +29,7 @@ app.get('/search', catchErrors(async (req, res) => {
 		enable_highlight_v1: false,
 		highlight_start_tag: '<span class="highlight">',
 		highlight_end_tag: '</span>',
+		page: req.query.page || 1,
 	});
 	const response = await fetch("http://web:8033/search?"+searchParams.toString(), {
 		headers: { 'X-TYPESENSE-API-KEY': process.env.KEY_LUCOS_ARACHNE },
