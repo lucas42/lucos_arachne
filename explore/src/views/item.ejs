@@ -32,13 +32,13 @@
 						<%
 						for(var ii = 0; ii < predicate.values.length; ii++) {
 							const value = predicate.values[ii];
-							if (predicate.type == 'literal') {
+							if (value.uri) {
 								%>
-								<li><%= value %></li>
+								<li><a href="/explore/item?uri=<%= encodeURIComponent(value.uri) %>"><%= value.label %></a></li>
 								<%
-							} else if (predicate.type == 'uri') {
+							} else {
 								%>
-								<li><a href="/explore/item?uri=<%= encodeURIComponent(value.uri) %>"><%= value.label || value.uri || 'unknown' %></a></li>
+								<li><%= value.label %></li>
 								<%
 							}
 						}

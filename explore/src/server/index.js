@@ -103,12 +103,14 @@ app.get('/item', catchErrors(async (req, res) => {
 		let value = null;
 		switch (rel.object.type) {
 			case 'literal':
-				value = rel.object.value;
+				value = {
+					label: rel.object.value || 'unknown',
+				};
 				break;
 			case 'uri':
 				value = {
 					uri: rel.object.value,
-					label: rel.objectLabel?.value,
+					label: rel.objectLabel?.value || rel.object.value || 'unknown',
 				};
 				break;
 			default:
@@ -119,11 +121,9 @@ app.get('/item', catchErrors(async (req, res) => {
 
 	// Sort the values in each predicate by label
 	Object.values(predicates).forEach(predicate => {
-		predicate.values.sort((a, b) => {
-			const label_a = (a.label || a).replace(/\W/g, '');
-			const label_b = (b.label || b).replace(/\W/g, '');
-			return label_a.localeCompare(label_b);
-		})
+		predicate.values.sort((a, b) =>
+			a.label.replace(/\W/g, '').localeCompare(b.label.replace(/\W/g, '')
+		));
 	});
 	res.render('item', {
 		uri,
