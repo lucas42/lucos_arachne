@@ -13,7 +13,7 @@
 			<h2>Data about "<%= prefLabel %>"</h2>
 			<div class='item-info'>
 				<a href="<%= uri %>" target="_blank">View/Edit Item</a>
-				<h3>Type</h3>
+				<h3 class="predicate-label">Type</h3>
 				<ul>
 					<%
 					for(var ii = 0; ii < types.length; ii++) {
@@ -27,7 +27,7 @@
 				for (let key in predicates) {
 					const predicate = predicates[key];
 					%>
-					<h3><%= predicate.label %></h3>
+					<h3 class="predicate-label"><%= predicate.label %></h3>
 					<ul>
 						<%
 						for(var ii = 0; ii < predicate.values.length; ii++) {
