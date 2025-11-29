@@ -116,6 +116,15 @@ app.get('/item', catchErrors(async (req, res) => {
 		}
 		predicates[rel.predicate.value].values.push(value);
 	});
+
+	// Sort the values in each predicate by label
+	Object.values(predicates).forEach(predicate => {
+		predicate.values.sort((a, b) => {
+			const label_a = (a.label || a).replace(/\W/g, '');
+			const label_b = (b.label || b).replace(/\W/g, '');
+			return label_a.localeCompare(label_b);
+		})
+	});
 	res.render('item', {
 		uri,
 		types,
