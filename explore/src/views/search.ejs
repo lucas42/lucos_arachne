@@ -16,7 +16,7 @@
 					const result = hits[ii];
 					const uri = result.document.id;
 				%>
-				<li><a href="<%= uri %>" target="_blank"><%= result.document.pref_label %> (<%= result.document.type %>)</a></li>
+				<li><a href="/explore/item?uri=<%= encodeURIComponent(uri) %>"><%= result.document.pref_label %> (<%= result.document.type %>)</a></li>
 				<% } %>
 			</ul>
 			<span class="count">Showing <%= hits.length %> results out of <%= found %></span>

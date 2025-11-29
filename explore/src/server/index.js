@@ -15,7 +15,6 @@ app.get('/', catchErrors(async (req, res) => {
 	});
 }));
 app.get('/search', catchErrors(async (req, res) => {
-	const q = req.query.q;
 	if (!req.query.q) {
 		res.redirect(302, '/explore');
 		return;
@@ -40,6 +39,88 @@ app.get('/search', catchErrors(async (req, res) => {
 		throw new Error(`Recieved ${response.status} error from search endpoint: ${data["message"]}`);
 	}
 	res.render('search', data);
+}));
+app.get('/item', catchErrors(async (req, res) => {
+	const uri = req.query.uri;
+	if (!uri) {
+		res.redirect(302, '/explore');
+		return;
+	}
+	const requestBody = new URLSearchParams({
+		query: `
+		PREFIX skos: <http://www.w3.org/2004/02/skos/core#>
+		SELECT ?predicate ?predicateLabel ?object ?objectLabel
+		WHERE {
+			BIND(<${uri}> AS ?subject)
+			?subject ?predicate ?object .
+			OPTIONAL { ?predicate skos:prefLabel ?predicateLabel }.
+			OPTIONAL { ?object skos:prefLabel ?objectLabel . }
+		}
+		ORDER BY ?predicateLabel
+		LIMIT 100
+		`,
+	})
+	const response = await fetch("http://triplestore:3030/arachne/", {
+		method: 'POST',
+		headers: {
+			"authorization": `basic ${Buffer.from(`lucos_arachne:${process.env.KEY_LUCOS_ARACHNE}`).toString('base64')}`,
+			"accept": "application/sparql-results+json,*/*;q=0.9",
+			"content-type": "application/x-www-form-urlencoded",
+		},
+		signal: AbortSignal.timeout(900),
+		"body": requestBody.toString(),
+	});
+	const data = await response.json();
+	if (!response.ok) {
+		throw new Error(`Recieved ${response.status} error from sparql endpoint: ${data["message"]}`);
+	}
+	let prefLabel = null;
+	let predicates = {};
+	let types = [];
+	data.results.bindings.forEach(rel => {
+		// Store a single prefLabel to use as title
+		if (rel.predicate.value == 'http://www.w3.org/2004/02/skos/core#prefLabel') {
+			prefLabel = rel.object.value;
+			return;
+		}
+		// Store a lists of types (limited to only types with a label)
+		if (rel.predicate.value == 'http://www.w3.org/1999/02/22-rdf-syntax-ns#type' && rel.objectLabel) {
+			// Only store labels in English or don't have a lang specified
+			if (!rel.objectLabel['xml:lang'] || rel.objectLabel['xml:lang'] == 'en') {
+				types.push(rel.objectLabel.value);
+			}
+			return;
+		}
+		if (!rel.predicateLabel) return;
+		if (rel.object.type == 'bnode') return; // Ignore bnodes for now
+		if (!(rel.predicate.value in predicates)) predicates[rel.predicate.value] = {
+			label: rel.predicateLabel?.value,
+			type: rel.object.type,
+			values: [],
+		};
+
+		let value = null;
+		switch (rel.object.type) {
+			case 'literal':
+				value = rel.object.value;
+				break;
+			case 'uri':
+				value = {
+					uri: rel.object.value,
+					label: rel.objectLabel?.value,
+				};
+				break;
+			default:
+				throw new Error(`Can't render object type ${rel.object.type}`);
+		}
+		predicates[rel.predicate.value].values.push(value);
+	});
+	res.render('item', {
+		uri,
+		types,
+		prefLabel,
+		predicates,
+	});
 }));
 
 // Error Handler
