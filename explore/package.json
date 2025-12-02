@@ -18,7 +18,7 @@
   "homepage": "https://github.com/lucas42/lucos_arachne#readme",
   "dependencies": {
     "ejs": "^3.1.10",
-    "express": "^5.1.0"
+    "express": "^5.2.0"
   },
   "devDependencies": {
     "@zazuko/yasgui": "^4.6.1",
