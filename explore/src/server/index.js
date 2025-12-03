@@ -59,7 +59,7 @@ app.get('/item', catchErrors(async (req, res) => {
 			OPTIONAL { ?object skos:prefLabel ?objectLabel . }
 		}
 		ORDER BY ?predicateLabel
-		LIMIT 100
+		LIMIT 1000
 		`,
 	})
 	const response = await fetch("http://triplestore:3030/arachne/", {
