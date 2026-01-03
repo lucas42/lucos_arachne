@@ -6,7 +6,9 @@ import urllib.parse
 # Namespace not included in rdflib
 MO = Namespace("http://purl.org/ontology/mo/")
 LOC_NS = Namespace("http://www.loc.gov/mads/rdf/v1#")
+EOLAS_NS = Namespace(f"https://eolas.l42.eu/ontology/")
 
+eolas_graph = Graph()
 
 # RDF/OWL types which shouldn't be indexed in search index
 IGNORE_TYPES = [
@@ -15,6 +17,7 @@ IGNORE_TYPES = [
 	"http://www.w3.org/2000/01/rdf-schema#Class",
 	"http://www.w3.org/2002/07/owl#DatatypeProperty",
 	"http://www.w3.org/2002/07/owl#Ontology",
+	"https://eolas.l42.eu/ontology/Category",
 ]
 
 KEY_LUCOS_ARACHNE = os.environ.get("KEY_LUCOS_ARACHNE")
@@ -24,13 +27,17 @@ if not KEY_LUCOS_ARACHNE:
 		"No KEY_LUCOS_ARACHNE environment variable found — won't be able to authenticate against triplestore endpoint"
 	)
 
-def get_type_label(graph, type_uri):
-	for label in graph.objects(type_uri, SKOS.prefLabel):
+def get_label(graph, uri):
+	for label in graph.objects(uri, SKOS.prefLabel):
 		if label.language is None or label.language == 'en':
 			return str(label)
 
-	raise ValueError(f"Unknown type URI encountered: {type_uri}")
+	raise ValueError(f"Unknown URI encountered when looking for label: {uri}")
 
+def get_category(graph, type):
+	for category in graph.objects(type, EOLAS_NS.hasCategory):
+		return get_label(eolas_graph, category)
+	raise ValueError(f"Can't find category for type {type}")
 
 def graph_to_typesense_docs(graph: Graph):
 	"""
@@ -43,6 +50,7 @@ def graph_to_typesense_docs(graph: Graph):
 		doc = {
 			"id": str(subj),
 			"type": None,
+			"category": None,
 			"pref_label": None,
 			"labels": [],
 			"description": None,
@@ -54,7 +62,8 @@ def graph_to_typesense_docs(graph: Graph):
 		for o in graph.objects(subj, RDF.type):
 			if str(o) in IGNORE_TYPES:
 				continue
-			doc["type"] = get_type_label(graph, o)
+			doc["type"] = get_label(graph, o)
+			doc["category"] = get_category(graph, o)
 			break
 
 		# pref_label
@@ -108,11 +117,16 @@ def update_searchindex(system, content, content_type):
 		return
 	g = Graph()
 	g.parse(data=content, format=content_type)
+
+	# Some data in the eolas graph is used for other ingestion (eg categories)
+	if system == "lucos_eolas":
+		global eolas_graph
+		eolas_graph = g
 	docs = graph_to_typesense_docs(g)
 	results = typesense_client.collections["items"].documents.import_(docs, {"action": "upsert"})
 	for result in results:
 		if not result["success"]:
-			raise Error(f"Error returned from search index upsert: {result["error"]}")
+			raise ValueError(f"Error returned from search index upsert: {result["error"]}")
 	print(f"Upserted {len(results)} documents to triplestore from {system}")
 
 def delete_doc_in_searchindex(system, doc_id):

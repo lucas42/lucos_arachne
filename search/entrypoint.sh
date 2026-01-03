@@ -101,6 +101,7 @@ else
 			"name": "items",
 			"fields": [
 				{"name": "type", "type": "string", "facet": true},
+				{"name": "category", "type": "string", "facet": true},
 				{"name": "pref_label", "type": "string", "full_text_search": true, "sort": true},
 				{"name": "labels", "type": "string[]", "optional": true, "full_text_search": true},
 				{"name": "description", "type": "string", "optional": true, "full_text_search": true},
