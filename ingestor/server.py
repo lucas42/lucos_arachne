@@ -51,7 +51,7 @@ class WebhookHandler(BaseHTTPRequestHandler):
 				self.send_error(404, "Webhook type Not Found")
 		except Exception as error:
 			traceback.print_exc()
-			self.send_error(500, "Error updating datastore", str(error))
+			self.send_error(500, "Error updating datastore: "+str(error))
 
 if __name__ == "__main__":
 	server = HTTPServer(('', port), WebhookHandler)
