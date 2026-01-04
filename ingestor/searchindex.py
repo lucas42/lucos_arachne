@@ -9,6 +9,8 @@ LOC_NS = Namespace("http://www.loc.gov/mads/rdf/v1#")
 EOLAS_NS = Namespace(f"https://eolas.l42.eu/ontology/")
 
 eolas_graph = Graph()
+# Keep a cache of type => category mappings
+type_category_cache = {}
 
 # RDF/OWL types which shouldn't be indexed in search index
 IGNORE_TYPES = [
@@ -35,8 +37,14 @@ def get_label(graph, uri):
 	raise ValueError(f"Unknown URI encountered when looking for label: {uri}")
 
 def get_category(graph, type):
+	global type_category_cache
 	for category in graph.objects(type, EOLAS_NS.hasCategory):
-		return get_label(eolas_graph, category)
+		label = get_label(eolas_graph, category)
+		type_category_cache[type] = label
+		return label
+	# If there's isn't a mapping in the current graph, check the cache for one from an existing graph
+	if type in type_category_cache:
+		return type_category_cache[type]
 	raise ValueError(f"Can't find category for type {type}")
 
 def graph_to_typesense_docs(graph: Graph):
@@ -112,14 +120,14 @@ typesense_client = typesense.Client({
 })
 
 
-def update_searchindex(system, content, content_type):
+def update_searchindex(system, content, content_type, full_graph):
 	if not system.startswith("lucos_"):
 		return
 	g = Graph()
 	g.parse(data=content, format=content_type)
 
-	# Some data in the eolas graph is used for other ingestion (eg categories)
-	if system == "lucos_eolas":
+	# Some data in the eolas graph is used for other ingestion (eg category labels)
+	if system == "lucos_eolas" and full_graph:
 		global eolas_graph
 		eolas_graph = g
 	docs = graph_to_typesense_docs(g)

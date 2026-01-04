@@ -21,7 +21,7 @@ if __name__ == "__main__":
 		for system, url in systems_to_graphs.items():
 			(content, content_type) = fetch_url(system, url)
 			replace_graph_in_triplestore(url, content, content_type)
-			update_searchindex(system, content, content_type)
+			update_searchindex(system, content, content_type, True)
 		cleanup_triplestore(systems_to_graphs.values())
 
 		# Loganne
