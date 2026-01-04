@@ -35,7 +35,7 @@ class WebhookHandler(BaseHTTPRequestHandler):
 			if event["type"].endswith("Created") or event["type"].endswith("Added") or event["type"].endswith("Updated"):
 				(content, content_type) = fetch_url(event["source"], event["url"])
 				replace_item_in_triplestore(event["url"], systems_to_graphs[event["source"]], content, content_type)
-				update_searchindex(event["source"], content, content_type, False)
+				update_searchindex(event["source"], content, content_type)
 				self.send_response(200, "OK")
 				self.send_header("Content-type", "text/plain")
 				self.end_headers()
