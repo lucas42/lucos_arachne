@@ -3,7 +3,7 @@ services:
     build: ./web
     container_name: lucos_arachne_web
     ports:
-      - "8033:8033"
+      - $PORT:80
     image: lucas42/lucos_arachne_web
     restart: always
     depends_on:
@@ -11,6 +11,8 @@ services:
       - search
       - ingestor
       - explore
+    environment:
+      - PORT
   triplestore:
     build:
       context: ./triplestore
@@ -44,7 +46,7 @@ services:
     image: lucas42/lucos_arachne_explore
     restart: always
     environment:
-      - PORT=8033
+      - PORT=8080
       - KEY_LUCOS_ARACHNE
   search:
     build: search

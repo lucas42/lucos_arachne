@@ -32,7 +32,7 @@ app.get('/search', catchErrors(async (req, res) => {
 		page: req.query.page || 1,
 		per_page: 30,
 	});
-	const response = await fetch("http://web:8033/search?"+searchParams.toString(), {
+	const response = await fetch("http://web/search?"+searchParams.toString(), {
 		headers: { 'X-TYPESENSE-API-KEY': process.env.KEY_LUCOS_ARACHNE },
 		signal: AbortSignal.timeout(900),
 	});
