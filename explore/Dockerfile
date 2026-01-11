@@ -16,6 +16,5 @@ RUN rm -rf node_modules client service-worker webpack*
 RUN npm install --omit=dev
 
 ENV NODE_ENV production
-EXPOSE $PORT
 
 CMD [ "npm", "start" ]
