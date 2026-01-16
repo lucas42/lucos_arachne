@@ -1,4 +1,4 @@
-FROM python:3.15.0a3-alpine3.22
+FROM python:3.15.0a5-alpine3.22
 
 RUN echo "15 04 * * * cd `pwd` && /usr/local/bin/pipenv --quiet run python -u ingest.py >> /var/log/cron.log 2>&1" | crontab -
 COPY startup.sh .
