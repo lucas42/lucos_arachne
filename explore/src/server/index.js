@@ -79,6 +79,7 @@ app.get('/item', catchErrors(async (req, res) => {
 	let prefLabel = null;
 	let predicates = {};
 	let types = [];
+	let wikipediaLink = null;
 	data.results.bindings.forEach(rel => {
 		// Store a single prefLabel to use as title
 		if (rel.predicate.value == 'http://www.w3.org/2004/02/skos/core#prefLabel') {
@@ -92,6 +93,9 @@ app.get('/item', catchErrors(async (req, res) => {
 				types.push(rel.objectLabel.value);
 			}
 			return;
+		}
+		if (rel.predicate.value == 'http://www.w3.org/2002/07/owl#sameAs' && rel.object.value.startsWith('http://dbpedia.org/resource/')) {
+			wikipediaLink = rel.object.value.replace('http://dbpedia.org/resource/', 'https://en.wikipedia.org/wiki/');
 		}
 		if (!rel.predicateLabel) return;
 		if (rel.object.type == 'bnode') return; // Ignore bnodes for now
@@ -131,6 +135,7 @@ app.get('/item', catchErrors(async (req, res) => {
 		types,
 		prefLabel,
 		predicates,
+		wikipediaLink,
 	});
 }));
 

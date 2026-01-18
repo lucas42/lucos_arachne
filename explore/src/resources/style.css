@@ -65,6 +65,28 @@ body {
 .item-info {
 	margin: 10px;
 }
+.item-links {
+	display: flex;
+}
+.item-links a {
+	flex: 1;
+	max-width: 150px;
+	border-style: outset;
+	margin: 0 10px;
+	border-radius: 7px;
+	padding: 0 6px;
+	text-align: center;
+	background-color: #dafaf9;
+	color: #002d30;
+	border-color: #002d30;
+	text-decoration: none;
+}
+.item-links a:hover {
+	background-color: #abe2e6;
+}
+.item-links a:active {
+	border-style: inset;
+}
 .predicate-label {
 	text-transform: capitalize;
 }

@@ -12,7 +12,16 @@
 		<div class="module">
 			<h2>Data about "<%= prefLabel %>"</h2>
 			<div class='item-info'>
-				<a href="<%= uri %>" target="_blank">View/Edit Item</a>
+				<div class='item-links'>
+					<a href="<%= uri %>" target="_blank">View/Edit Item</a>
+					<%
+					if (wikipediaLink) {
+						%>
+						<a href="<%= wikipediaLink %>" target="_blank">View on Wikipedia</a>
+						<%
+					}
+					%>
+				</div>
 				<h3 class="predicate-label">Type</h3>
 				<ul>
 					<%
