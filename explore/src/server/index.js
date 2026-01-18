@@ -69,7 +69,7 @@ app.get('/item', catchErrors(async (req, res) => {
 			"accept": "application/sparql-results+json,*/*;q=0.9",
 			"content-type": "application/x-www-form-urlencoded",
 		},
-		signal: AbortSignal.timeout(900),
+		signal: AbortSignal.timeout(2900),
 		"body": requestBody.toString(),
 	});
 	const data = await response.json();
