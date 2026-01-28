@@ -1,4 +1,4 @@
-FROM typesense/typesense:29.0
+FROM typesense/typesense:30.0
 
 # Use bash explicitly
 SHELL ["/bin/bash", "-c"]
