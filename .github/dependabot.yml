@@ -5,6 +5,11 @@ updates:
   schedule:
     interval: daily
     time: "07:00"
+- package-ecosystem: pip
+  directory: "/ingestor"
+  schedule:
+    interval: daily
+    time: "07:00"
 - package-ecosystem: docker
   directory: "/triplestore"
   schedule:
