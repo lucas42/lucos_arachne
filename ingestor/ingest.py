@@ -3,18 +3,16 @@
 Bulk ingests RDF from other systems and adds data to the triplestore and searchindex
 """
 import sys, os
-import requests
 from authorised_fetch import fetch_url
 from triplestore import systems_to_graphs, replace_graph_in_triplestore, cleanup_triplestore
 from searchindex import update_searchindex
+from loganne import updateLoganne
+from schedule_tracker import updateScheduleTracker
 
-SCHEDULE_TRACKER_ENDPOINT = os.environ.get("SCHEDULE_TRACKER_ENDPOINT")
-LOGANNE_ENDPOINT = os.environ.get("LOGANNE_ENDPOINT")
-
-session = requests.Session()
-session.headers.update({
-	"User-Agent": "lucos_arachne_ingestor",
-})
+try:
+	BASE_URL = os.environ["APP_ORIGIN"] + "/"
+except KeyError:
+	sys.exit("\033[91mAPP_ORIGIN environment variable not set\033[0m")
 
 if __name__ == "__main__":
 	try:
@@ -24,30 +22,10 @@ if __name__ == "__main__":
 			update_searchindex(system, content, content_type)
 		cleanup_triplestore(systems_to_graphs.values())
 
-		# Loganne
-		session.post(
-			LOGANNE_ENDPOINT,
-			json={
-				"type": "knowledgeIngest",
-				"source": "lucos_arachne_ingestor",
-				"humanReadable": "Data ingested into knowledge graph",
-				"url": "https://arachne.l42.eu/",
-			},
-			headers={"Content-Type": "application/json"},
-		)
+		updateLoganne(type="knowledgeIngest", humanReadable="Data ingested into knowledge graph", url=BASE_URL)
 
-		# Schedule tracker success
-		session.post(
-			SCHEDULE_TRACKER_ENDPOINT,
-			json={"system": "lucos_arachne_ingestor", "frequency": 24*60*60, "status": "success"},
-			headers={"Content-Type": "application/json"},
-		)
+		updateScheduleTracker(success=True)
 	except Exception as e:
 		error_message = f"Ingest failed: {e}"
-		print("Sending error to schedule tracker")
-		session.post(
-			SCHEDULE_TRACKER_ENDPOINT,
-			json={"system": "lucos_arachne_ingestor", "frequency": 24*60*60, "status": "error", "message": error_message},
-			headers={"Content-Type": "application/json"},
-		)
+		updateScheduleTracker(success=True, message=error_message)
 		sys.exit(error_message)

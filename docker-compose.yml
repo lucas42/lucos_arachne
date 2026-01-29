@@ -35,6 +35,8 @@ services:
       - KEY_LUCOS_EOLAS
       - KEY_LUCOS_CONTACTS
       - KEY_LUCOS_MEDIA_METADATA_API
+      - SYSTEM=lucos_arachne_ingestor
+      - APP_ORIGIN
     depends_on:
       triplestore:
         condition: service_started
