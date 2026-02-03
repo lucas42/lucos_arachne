@@ -1,4 +1,4 @@
-FROM lucas42/lucos_scheduled_scripts
+FROM lucas42/lucos_scheduled_scripts:1.0.0
 
 RUN echo "15 04 * * * pipenv --quiet run python -u ingest.py" | crontab -
 COPY startup.sh .
