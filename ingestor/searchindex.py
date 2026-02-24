@@ -15,6 +15,7 @@ IGNORE_TYPES = [
 	"http://www.w3.org/2000/01/rdf-schema#Class",
 	"http://www.w3.org/2002/07/owl#DatatypeProperty",
 	"http://www.w3.org/2002/07/owl#Ontology",
+	"http://www.w3.org/2002/07/owl#TransitiveProperty",
 	"https://eolas.l42.eu/ontology/Category",
 ]
 
