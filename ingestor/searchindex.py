@@ -118,6 +118,9 @@ def update_searchindex(system, content, content_type):
 	g.parse(data=content, format=content_type)
 
 	docs = graph_to_typesense_docs(g)
+	if len(docs) == 0:
+		print(f"No docs updated in search index, from {system}", flush=True)
+		return
 	results = typesense_client.collections["items"].documents.import_(docs, {"action": "upsert"})
 	for result in results:
 		if not result["success"]:
