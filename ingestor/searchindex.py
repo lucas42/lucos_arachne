@@ -61,8 +61,15 @@ def graph_to_typesense_docs(graph: Graph):
 		for o in graph.objects(subj, RDF.type):
 			if str(o) in IGNORE_TYPES:
 				continue
-			doc["type"] = get_label(graph, o)
-			doc["category"] = get_category(graph, o)
+			
+			# If the type itself has a type of LanguageFamily, then the subject is a Language
+			if (o, RDF.type, EOLAS_NS.LanguageFamily) in graph:
+				doc["type"] = "Language"
+				doc["category"] = "Anthropological"
+				doc["lang_family"] = str(o).split('/')[-1]
+			else:
+				doc["type"] = get_label(graph, o)
+				doc["category"] = get_category(graph, o)
 			break
 
 		# pref_label
@@ -89,9 +96,6 @@ def graph_to_typesense_docs(graph: Graph):
 				doc["lyrics"] = str(o)
 				break
 
-		for o in graph.objects(subj, LOC_NS.hasBroaderExternalAuthority):
-			doc["lang_family"] = str(o).split('/')[-1]
-			break
 
 		# only include if we have a type and pref_label
 		if doc["type"] and doc["pref_label"]:
