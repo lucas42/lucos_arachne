@@ -32,6 +32,7 @@
     "folder-hash": {
       "minimatch": "^7.4.7"
     },
-    "minimatch": "^5.1.7"
+    "minimatch": "^5.1.7",
+    "serialize-javascript": ">=7.0.3"
   }
 }
