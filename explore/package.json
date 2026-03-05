@@ -33,6 +33,7 @@
       "minimatch": "^7.4.7"
     },
     "minimatch": "^5.1.7",
-    "serialize-javascript": ">=7.0.3"
+    "serialize-javascript": ">=7.0.3",
+    "dompurify": ">=3.3.2"
   }
 }
