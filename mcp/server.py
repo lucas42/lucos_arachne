@@ -22,6 +22,9 @@ TYPESENSE_URL = "http://search:8108"
 # KEY_LUCOS_ARACHNE is registered in the search container with full ["*"] permissions
 TYPESENSE_API_KEY = os.environ.get("KEY_LUCOS_ARACHNE", "")
 
+TRIPLESTORE_SPARQL_URL = "http://triplestore:3030/arachne/sparql"
+TRIPLESTORE_AUTH = ("admin", os.environ.get("KEY_LUCOS_ARACHNE", ""))
+
 mcp = FastMCP(
     name="lucos_arachne",
     instructions=(
@@ -74,6 +77,54 @@ def search(query: str, filter_by: Optional[str] = None, limit: int = 10) -> str:
         entity_type = doc.get("type") or "(unknown type)"
         uri = doc.get("id", "")
         lines.append(f"- [{entity_type}] {label}\n  URI: {uri}")
+
+    return "\n".join(lines)
+
+
+@mcp.tool()
+def list_types() -> str:
+    """
+    List all RDF types in the triplestore with instance counts.
+
+    Returns a list of types sorted by instance count (descending), with
+    human-readable labels where available (skos:prefLabel or rdfs:label),
+    falling back to the URI.
+    """
+    query = """
+    PREFIX skos: <http://www.w3.org/2004/02/skos/core#>
+    PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+
+    SELECT ?type (COUNT(?s) AS ?count) (SAMPLE(?prefLabel) AS ?label) WHERE {
+        ?s a ?type .
+        OPTIONAL {
+            { ?type skos:prefLabel ?prefLabel }
+            UNION
+            { ?type rdfs:label ?prefLabel }
+        }
+    }
+    GROUP BY ?type
+    ORDER BY DESC(?count)
+    """
+
+    response = requests.get(
+        TRIPLESTORE_SPARQL_URL,
+        params={"query": query, "format": "json"},
+        auth=TRIPLESTORE_AUTH,
+        timeout=30,
+    )
+    response.raise_for_status()
+    data = response.json()
+
+    bindings = data.get("results", {}).get("bindings", [])
+    if not bindings:
+        return "No types found in the triplestore."
+
+    lines = [f"Found {len(bindings)} type(s) in the triplestore:\n"]
+    for binding in bindings:
+        uri = binding["type"]["value"]
+        count = binding["count"]["value"]
+        label = binding.get("label", {}).get("value") or uri
+        lines.append(f"- {label} ({count} instance(s))\n  URI: {uri}")
 
     return "\n".join(lines)
 
