@@ -61,17 +61,17 @@ The MCP server also exposes MCP resources — static context that helps LLM cons
 
 ## Alternatives considered
 
-### Direct HTTP/SPARQL access from the agent sandbox
+### Direct SPARQL access (with or without a wrapper)
 
-The architect's initial recommendation: give the agent a read-only SPARQL key, a wrapper script, and example queries. This solves the "agent needs data awareness" problem with zero new infrastructure.
+The architect's initial recommendation: give the agent a read-only SPARQL key, a wrapper script, and example queries. This solves the "agent needs data awareness" problem with zero new infrastructure — just HTTP access to the existing SPARQL endpoint.
 
-Rejected because it does not solve the SPARQL generation problem. An agent with a SPARQL endpoint and example queries still needs to compose novel queries, and LLMs demonstrably cannot do this reliably for SPARQL with custom ontologies. The abstraction layer is necessary, not optional.
+Rejected because **LLMs cannot reliably generate valid SPARQL.** The syntax is too precise, the URIs are custom to the arachne ontology, and prefix declarations must be exact. Models produce queries that look plausible but fail on execution. This is not a model quality issue that will improve with better models — it is a fundamental mismatch between SPARQL's precision requirements and LLM text generation characteristics. The same problem applies whether the agent calls the endpoint directly, uses a shell wrapper, or has a library of example queries to crib from. An abstraction layer that translates structured parameters into correct SPARQL — rather than asking the LLM to write SPARQL — is necessary, not optional. This is the core insight that motivated the MCP approach.
 
 ### MCP server as a local stdio process
 
-Run the MCP server locally in the agent sandbox rather than as a deployed container. Simpler MCP transport (stdio vs SSE), zero production impact.
+Originally proposed by the architect as the deployment model after the SPARQL generation problem ruled out direct access. Run the MCP server locally in the agent sandbox as a stdio process rather than as a deployed container. Simpler MCP transport (stdio vs SSE), zero production impact.
 
-Rejected because of the sandbox drift problem. The agent sandbox VM accumulates state that diverges from its provisioning config. A tool under active iterative development would make this worse. Docker containers under version control are reproducible by design.
+Revised to a container deployment at lucas42's suggestion, because of the sandbox drift problem. The agent sandbox VM accumulates state that diverges from its provisioning config. A tool under active iterative development would make this worse. Docker containers under version control are reproducible by design.
 
 ### Separate repository
 
