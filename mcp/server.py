@@ -81,6 +81,98 @@ def search(query: str, filter_by: Optional[str] = None, limit: int = 10) -> str:
     return "\n".join(lines)
 
 
+KNOWN_PREFIXES = {
+    "http://www.w3.org/1999/02/22-rdf-syntax-ns#": "rdf:",
+    "http://www.w3.org/2000/01/rdf-schema#": "rdfs:",
+    "http://www.w3.org/2002/07/owl#": "owl:",
+    "http://www.w3.org/2004/02/skos/core#": "skos:",
+    "http://xmlns.com/foaf/0.1/": "foaf:",
+    "http://schema.org/": "schema:",
+    "http://purl.org/dc/terms/": "dcterms:",
+    "http://purl.org/dc/elements/1.1/": "dc:",
+    "http://www.w3.org/ns/prov#": "prov:",
+}
+
+
+def shorten_uri(uri: str) -> str:
+    """Return a prefixed URI if a known prefix matches, otherwise return the full URI."""
+    for ns, prefix in KNOWN_PREFIXES.items():
+        if uri.startswith(ns):
+            return prefix + uri[len(ns):]
+    return uri
+
+
+@mcp.tool()
+def get_entity(uri: str) -> str:
+    """
+    Return all properties and values for a given entity URI.
+
+    Queries the triplestore reasoning endpoint (which includes inferred triples)
+    for all triples where the given URI is the subject. Properties are shown with
+    human-readable prefixed names where possible (e.g. foaf:name, skos:prefLabel).
+
+    Args:
+        uri: The full URI of the entity to retrieve (e.g. https://arachne.l42.eu/track/123).
+    """
+    if ">" in uri or any(c.isspace() for c in uri):
+        return f"Invalid URI: <{uri}> contains characters not permitted in a SPARQL IRI."
+
+    query = f"""
+    SELECT ?p ?o WHERE {{
+        <{uri}> ?p ?o .
+    }}
+    ORDER BY ?p ?o
+    """
+
+    response = requests.get(
+        TRIPLESTORE_SPARQL_URL,
+        params={"query": query, "format": "json"},
+        auth=TRIPLESTORE_AUTH,
+        timeout=30,
+    )
+    response.raise_for_status()
+    data = response.json()
+
+    bindings = data.get("results", {}).get("bindings", [])
+    if not bindings:
+        return f"No properties found for entity <{uri}>. The URI may not exist in the triplestore."
+
+    # Group values by property
+    properties: dict[str, list[str]] = {}
+    for binding in bindings:
+        prop_uri = binding["p"]["value"]
+        prop_label = shorten_uri(prop_uri)
+
+        obj = binding["o"]
+        if obj["type"] == "uri":
+            value = f"<{shorten_uri(obj['value'])}>"
+        elif obj["type"] == "literal":
+            lang = obj.get("xml:lang")
+            datatype = obj.get("datatype")
+            raw = obj["value"]
+            if lang:
+                value = f'"{raw}"@{lang}'
+            elif datatype:
+                value = f'"{raw}"^^{shorten_uri(datatype)}'
+            else:
+                value = f'"{raw}"'
+        else:
+            value = obj["value"]
+
+        properties.setdefault(prop_label, []).append(value)
+
+    lines = [f"Entity: <{uri}>\n"]
+    for prop, values in sorted(properties.items()):
+        if len(values) == 1:
+            lines.append(f"  {prop}: {values[0]}")
+        else:
+            lines.append(f"  {prop}:")
+            for v in values:
+                lines.append(f"    - {v}")
+
+    return "\n".join(lines)
+
+
 @mcp.tool()
 def list_types() -> str:
     """
