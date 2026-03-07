@@ -368,3 +368,115 @@ def test_find_entities_property_not_found():
 
     assert "Could not resolve property" in result
     assert "nonExistentProp" in result
+
+
+# ---------------------------------------------------------------------------
+# count_by_property
+# ---------------------------------------------------------------------------
+
+def _count_response(total: int, with_prop: int) -> MagicMock:
+    """Build a mock SPARQL response for count_by_property queries."""
+    return _sparql_response([
+        {
+            "total": _literal(str(total), datatype="http://www.w3.org/2001/XMLSchema#integer"),
+            "withProp": _literal(str(with_prop), datatype="http://www.w3.org/2001/XMLSchema#integer"),
+        }
+    ])
+
+
+def test_count_by_property_basic():
+    """count_by_property returns total and matching counts."""
+    type_response = _sparql_response([
+        {"type": _uri_binding("https://schema.org/MusicRecording")},
+    ])
+    prop_response = _sparql_response([
+        {"prop": _uri_binding("https://schema.org/lyrics")},
+    ])
+    count_response = _count_response(total=3891, with_prop=1247)
+
+    with patch("server.requests.get", side_effect=[type_response, prop_response, count_response]):
+        result = server.count_by_property(type="Track", property="lyrics")
+
+    assert "1,247" in result
+    assert "3,891" in result
+    assert "Track" in result
+    assert "lyrics" in result
+
+
+def test_count_by_property_with_type_uri_directly():
+    """count_by_property skips type resolution when given a URI directly."""
+    prop_response = _sparql_response([
+        {"prop": _uri_binding("https://schema.org/lyrics")},
+    ])
+    count_response = _count_response(total=100, with_prop=50)
+
+    # Only two SPARQL calls: property resolution + count query (no type resolution)
+    with patch("server.requests.get", side_effect=[prop_response, count_response]) as mock_get:
+        result = server.count_by_property(
+            type="https://schema.org/MusicRecording",
+            property="lyrics",
+        )
+
+    assert mock_get.call_count == 2
+    assert "50" in result
+    assert "100" in result
+
+
+def test_count_by_property_with_property_uri_directly():
+    """count_by_property skips property resolution when given a URI directly."""
+    type_response = _sparql_response([
+        {"type": _uri_binding("https://schema.org/MusicRecording")},
+    ])
+    count_response = _count_response(total=500, with_prop=200)
+
+    # Only two SPARQL calls: type resolution + count query (no property resolution)
+    with patch("server.requests.get", side_effect=[type_response, count_response]) as mock_get:
+        result = server.count_by_property(
+            type="Track",
+            property="https://schema.org/lyrics",
+        )
+
+    assert mock_get.call_count == 2
+    assert "200" in result
+    assert "500" in result
+
+
+def test_count_by_property_none_have_property():
+    """count_by_property returns a sensible result when no entities have the property."""
+    type_response = _sparql_response([
+        {"type": _uri_binding("https://schema.org/MusicRecording")},
+    ])
+    prop_response = _sparql_response([
+        {"prop": _uri_binding("https://schema.org/lyrics")},
+    ])
+    count_response = _count_response(total=3891, with_prop=0)
+
+    with patch("server.requests.get", side_effect=[type_response, prop_response, count_response]):
+        result = server.count_by_property(type="Track", property="lyrics")
+
+    assert "0" in result
+    assert "3,891" in result
+
+
+def test_count_by_property_type_not_found():
+    """count_by_property returns an error when the type can't be resolved."""
+    type_response = _sparql_response([])
+
+    with patch("server.requests.get", return_value=type_response):
+        result = server.count_by_property(type="Unicorn", property="lyrics")
+
+    assert "No type found" in result
+    assert "Unicorn" in result
+
+
+def test_count_by_property_property_not_found():
+    """count_by_property returns an error when the property can't be resolved."""
+    type_response = _sparql_response([
+        {"type": _uri_binding("https://schema.org/MusicRecording")},
+    ])
+    prop_response = _sparql_response([])
+
+    with patch("server.requests.get", side_effect=[type_response, prop_response]):
+        result = server.count_by_property(type="Track", property="nonExistentProp")
+
+    assert "No property found" in result

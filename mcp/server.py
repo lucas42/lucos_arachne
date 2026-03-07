@@ -462,6 +462,63 @@ def find_entities(
     return "\n".join(lines)
 
 
+@mcp.tool()
+def count_by_property(type: str, property: str) -> str:
+    """
+    Count how many entities of a given type have a specific property.
+
+    Returns the total number of entities of the type, and how many of those
+    have the specified property set.
+
+    Args:
+        type: The type of entity to count — either a human-readable name (e.g. "Track")
+              or a full URI. Use list_types() to see available types.
+        property: The property name or URI to check (e.g. "lyrics",
+                  "https://schema.org/lyrics").
+    """
+    # Resolve the type to a URI
+    type_uri, type_err = _resolve_type_uri(type)
+    if type_err:
+        return type_err
+
+    # Resolve the property to a URI
+    prop_uri, prop_err = _resolve_property_uri(property)
+    if prop_err:
+        return prop_err
+
+    query = f"""
+    SELECT
+        (COUNT(DISTINCT ?s) AS ?total)
+        (COUNT(DISTINCT ?sWithProp) AS ?withProp)
+    WHERE {{
+        ?s a <{type_uri}> .
+        OPTIONAL {{
+            ?sWithProp a <{type_uri}> .
+            ?sWithProp <{prop_uri}> ?val .
+        }}
+    }}
+    """
+
+    response = requests.get(
+        TRIPLESTORE_SPARQL_URL,
+        params={"query": query, "format": "json"},
+        auth=TRIPLESTORE_AUTH,
+        timeout=30,
+    )
+    response.raise_for_status()
+    data = response.json()
+
+    bindings = data.get("results", {}).get("bindings", [])
+    if not bindings:
+        return f"Could not retrieve counts for type '{type}' and property '{property}'."
+
+    binding = bindings[0]
+    total = int(binding.get("total", {}).get("value", 0))
+    with_prop = int(binding.get("withProp", {}).get("value", 0))
+
+    return f"{with_prop:,} of {total:,} {type} entities have a {property} property."
+
+
 async def info(request):
     return JSONResponse({
         "system": os.environ.get("SYSTEM", "lucos_arachne"),
