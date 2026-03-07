@@ -79,6 +79,33 @@ def test_validate_uri_with_space():
 
 
 # ---------------------------------------------------------------------------
+# _validate_label_for_sparql
+# ---------------------------------------------------------------------------
+
+def test_validate_label_valid():
+    assert server._validate_label_for_sparql("Person") is None
+
+
+def test_validate_label_with_double_quote():
+    err = server._validate_label_for_sparql('foo"bar')
+    assert err is not None
+    assert "Invalid label" in err
+
+
+def test_validate_label_with_backslash():
+    err = server._validate_label_for_sparql("foo\\bar")
+    assert err is not None
+    assert "Invalid label" in err
+
+
+def test_validate_label_injection_attempt():
+    """A classic SPARQL injection payload is rejected."""
+    err = server._validate_label_for_sparql('foo" ) } UNION { ?s ?p ?o } #')
+    assert err is not None
+    assert "Invalid label" in err
+
+
+# ---------------------------------------------------------------------------
 # _resolve_type_uri
 # ---------------------------------------------------------------------------
 
@@ -123,6 +150,15 @@ def test_resolve_type_uri_invalid_uri():
     assert "Invalid URI" in err
 
 
+def test_resolve_type_uri_injection_attempt():
+    """Reject a label containing a double-quote to prevent SPARQL injection."""
+    with patch("server.requests.get") as mock_get:
+        uri, err = server._resolve_type_uri('foo" ) } UNION { ?s ?p ?o } #')
+        mock_get.assert_not_called()
+    assert uri is None
+    assert "Invalid label" in err
+
+
 # ---------------------------------------------------------------------------
 # _resolve_property_uri
 # ---------------------------------------------------------------------------
@@ -157,6 +193,15 @@ def test_resolve_property_uri_not_found():
 
     assert uri is None
     assert "No property found" in err
+
+
+def test_resolve_property_uri_injection_attempt():
+    """Reject a property name containing a double-quote to prevent SPARQL injection."""
+    with patch("server.requests.get") as mock_get:
+        uri, err = server._resolve_property_uri('foo" ) } UNION { ?s ?p ?o } #')
+        mock_get.assert_not_called()
+    assert uri is None
+    assert "Invalid label" in err
 
 
 # ---------------------------------------------------------------------------

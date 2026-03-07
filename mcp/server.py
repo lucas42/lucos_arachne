@@ -236,6 +236,19 @@ def _validate_uri_for_sparql(uri: str) -> Optional[str]:
     return None
 
 
+def _validate_label_for_sparql(label: str) -> Optional[str]:
+    """
+    Validate that a label is safe to embed in a SPARQL string literal position.
+    Returns an error message if invalid, or None if valid.
+
+    Double-quote and backslash characters can break out of a SPARQL string literal
+    and are therefore rejected.
+    """
+    if '"' in label or "\\" in label:
+        return f"Invalid label: '{label}' contains characters not permitted in a SPARQL string literal."
+    return None
+
+
 def _resolve_type_uri(type_name: str) -> tuple[Optional[str], Optional[str]]:
     """
     Resolve a human-readable type name (or URI) to a triplestore type URI.
@@ -248,6 +261,11 @@ def _resolve_type_uri(type_name: str) -> tuple[Optional[str], Optional[str]]:
         if err:
             return None, err
         return type_name, None
+
+    # Validate the label is safe to interpolate into a SPARQL string literal
+    err = _validate_label_for_sparql(type_name)
+    if err:
+        return None, err
 
     # Query triplestore for a type with a matching label
     query = """
@@ -299,6 +317,11 @@ def _resolve_property_uri(prop_name: str) -> tuple[Optional[str], Optional[str]]
         if err:
             return None, err
         return prop_name, None
+
+    # Validate the label is safe to interpolate into a SPARQL string literal
+    err = _validate_label_for_sparql(prop_name)
+    if err:
+        return None, err
 
     # Query triplestore for a property URI matching the name
     query = """
