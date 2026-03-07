@@ -221,6 +221,247 @@ def list_types() -> str:
     return "\n".join(lines)
 
 
+def _is_uri(value: str) -> bool:
+    """Return True if the value looks like an absolute URI."""
+    return value.startswith("http://") or value.startswith("https://")
+
+
+def _validate_uri_for_sparql(uri: str) -> Optional[str]:
+    """
+    Validate that a URI is safe to embed in a SPARQL IRI position.
+    Returns an error message if invalid, or None if valid.
+    """
+    if ">" in uri or any(c.isspace() for c in uri):
+        return f"Invalid URI: <{uri}> contains characters not permitted in a SPARQL IRI."
+    return None
+
+
+def _validate_label_for_sparql(label: str) -> Optional[str]:
+    """
+    Validate that a label is safe to embed in a SPARQL string literal position.
+    Returns an error message if invalid, or None if valid.
+
+    Double-quote and backslash characters can break out of a SPARQL string literal
+    and are therefore rejected.
+    """
+    if '"' in label or "\\" in label:
+        return f"Invalid label: '{label}' contains characters not permitted in a SPARQL string literal."
+    return None
+
+
+def _resolve_type_uri(type_name: str) -> tuple[Optional[str], Optional[str]]:
+    """
+    Resolve a human-readable type name (or URI) to a triplestore type URI.
+
+    Returns (uri, error_message). On success, error_message is None.
+    On failure, uri is None.
+    """
+    if _is_uri(type_name):
+        err = _validate_uri_for_sparql(type_name)
+        if err:
+            return None, err
+        return type_name, None
+
+    # Validate the label is safe to interpolate into a SPARQL string literal
+    err = _validate_label_for_sparql(type_name)
+    if err:
+        return None, err
+
+    # Query triplestore for a type with a matching label
+    query = """
+    PREFIX skos: <http://www.w3.org/2004/02/skos/core#>
+    PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+
+    SELECT DISTINCT ?type WHERE {
+        ?s a ?type .
+        OPTIONAL {
+            { ?type skos:prefLabel ?label }
+            UNION
+            { ?type rdfs:label ?label }
+        }
+        BIND(COALESCE(?label, "") AS ?resolvedLabel)
+        FILTER(
+            LCASE(STR(?resolvedLabel)) = LCASE("%s")
+            || LCASE(STRAFTER(STR(?type), "#")) = LCASE("%s")
+            || LCASE(STRAFTER(STR(?type), "/")) = LCASE("%s")
+        )
+    }
+    LIMIT 1
+    """ % (type_name, type_name, type_name)
+
+    response = requests.get(
+        TRIPLESTORE_SPARQL_URL,
+        params={"query": query, "format": "json"},
+        auth=TRIPLESTORE_AUTH,
+        timeout=30,
+    )
+    response.raise_for_status()
+    data = response.json()
+
+    bindings = data.get("results", {}).get("bindings", [])
+    if not bindings:
+        return None, f"No type found matching '{type_name}'. Use list_types() to see available types."
+
+    return bindings[0]["type"]["value"], None
+
+
+def _resolve_property_uri(prop_name: str) -> tuple[Optional[str], Optional[str]]:
+    """
+    Resolve a human-readable property name (or URI) to a property URI.
+
+    Returns (uri, error_message). On success, error_message is None.
+    On failure, uri is None.
+    """
+    if _is_uri(prop_name):
+        err = _validate_uri_for_sparql(prop_name)
+        if err:
+            return None, err
+        return prop_name, None
+
+    # Validate the label is safe to interpolate into a SPARQL string literal
+    err = _validate_label_for_sparql(prop_name)
+    if err:
+        return None, err
+
+    # Query triplestore for a property URI matching the name
+    query = """
+    PREFIX skos: <http://www.w3.org/2004/02/skos/core#>
+    PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+
+    SELECT DISTINCT ?prop WHERE {
+        ?s ?prop ?o .
+        FILTER(
+            LCASE(STRAFTER(STR(?prop), "#")) = LCASE("%s")
+            || LCASE(STRAFTER(STR(?prop), "/")) = LCASE("%s")
+        )
+    }
+    LIMIT 1
+    """ % (prop_name, prop_name)
+
+    response = requests.get(
+        TRIPLESTORE_SPARQL_URL,
+        params={"query": query, "format": "json"},
+        auth=TRIPLESTORE_AUTH,
+        timeout=30,
+    )
+    response.raise_for_status()
+    data = response.json()
+
+    bindings = data.get("results", {}).get("bindings", [])
+    if not bindings:
+        return None, f"No property found matching '{prop_name}'."
+
+    return bindings[0]["prop"]["value"], None
+
+
+@mcp.tool()
+def find_entities(
+    type: str,
+    limit: int = 20,
+    properties: Optional[list[str]] = None,
+) -> str:
+    """
+    Find entities of a given type in the knowledge graph, with optional property values.
+
+    Returns a list of matching entities with their URI, label, and any requested
+    property values.
+
+    Args:
+        type: The type of entity to find — either a human-readable name (e.g. "Person",
+              "Track") or a full URI. Use list_types() to see available types.
+        limit: Maximum number of results to return (default 20).
+        properties: Optional list of property names or URIs to include in results
+                    (e.g. ["birthday", "foaf:name"]). If omitted, only the label
+                    and URI are returned.
+    """
+    # Resolve the type to a URI
+    type_uri, type_err = _resolve_type_uri(type)
+    if type_err:
+        return type_err
+
+    # Resolve requested property names to URIs
+    resolved_props: list[tuple[str, str]] = []  # (prop_name, prop_uri)
+    if properties:
+        for prop_name in properties:
+            prop_uri, prop_err = _resolve_property_uri(prop_name)
+            if prop_err:
+                return f"Could not resolve property '{prop_name}': {prop_err}"
+            resolved_props.append((prop_name, prop_uri))
+
+    # Build the SPARQL query
+    optional_clauses = ""
+    select_vars = "?s ?label"
+    for i, (_, prop_uri) in enumerate(resolved_props):
+        var = f"?val{i}"
+        select_vars += f" {var}"
+        optional_clauses += f"\n    OPTIONAL {{ ?s <{prop_uri}> {var} . }}"
+
+    query = f"""
+    PREFIX skos: <http://www.w3.org/2004/02/skos/core#>
+    PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+
+    SELECT {select_vars} WHERE {{
+        ?s a <{type_uri}> .
+        OPTIONAL {{
+            {{ ?s skos:prefLabel ?label }}
+            UNION
+            {{ ?s rdfs:label ?label }}
+        }}{optional_clauses}
+    }}
+    ORDER BY ?label ?s
+    LIMIT {limit}
+    """
+
+    response = requests.get(
+        TRIPLESTORE_SPARQL_URL,
+        params={"query": query, "format": "json"},
+        auth=TRIPLESTORE_AUTH,
+        timeout=30,
+    )
+    response.raise_for_status()
+    data = response.json()
+
+    bindings = data.get("results", {}).get("bindings", [])
+    if not bindings:
+        return f"No entities of type '{type}' found in the triplestore."
+
+    # De-duplicate by subject URI, merging property values across rows
+    # (multiple rows can appear when a property has multiple values)
+    entities: dict[str, dict] = {}
+    for binding in bindings:
+        subject_uri = binding["s"]["value"]
+
+        if subject_uri not in entities:
+            label_binding = binding.get("label")
+            label = label_binding["value"] if label_binding else "(no label)"
+            entities[subject_uri] = {"label": label, "props": {}}
+
+        for i, (prop_name, _) in enumerate(resolved_props):
+            var = f"val{i}"
+            val_binding = binding.get(var)
+            if val_binding:
+                raw = val_binding["value"]
+                if val_binding["type"] == "uri":
+                    raw = f"<{shorten_uri(raw)}>"
+                entities[subject_uri]["props"].setdefault(prop_name, [])
+                if raw not in entities[subject_uri]["props"][prop_name]:
+                    entities[subject_uri]["props"][prop_name].append(raw)
+
+    lines = [f"Found {len(entities)} {type} entity/entities (showing up to {limit}):\n"]
+    for uri, entity in entities.items():
+        label = entity["label"]
+        lines.append(f"- {label}\n  URI: {uri}")
+        for prop_name, values in entity["props"].items():
+            if len(values) == 1:
+                lines.append(f"  {prop_name}: {values[0]}")
+            else:
+                lines.append(f"  {prop_name}:")
+                for v in values:
+                    lines.append(f"    - {v}")
+
+    return "\n".join(lines)
+
+
 async def info(request):
     return JSONResponse({
         "system": os.environ.get("SYSTEM", "lucos_arachne"),
