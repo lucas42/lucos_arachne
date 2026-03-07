@@ -14,6 +14,12 @@ services:
       - mcp
     environment:
       - PORT
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost/_info"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
   triplestore:
     build:
       context: ./triplestore
@@ -29,6 +35,12 @@ services:
       resources:
         limits:
           memory: 2G
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3030/$/ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
   ingestor:
     build: ./ingestor
     container_name: lucos_arachne_ingestor
@@ -48,6 +60,12 @@ services:
         condition: service_started
       search:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import socket; s=socket.socket(); s.settimeout(5); s.connect(('127.0.0.1', 8099)); s.close()"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
   explore:
     build: explore
     container_name: lucos_arachne_explore
@@ -56,6 +74,12 @@ services:
     environment:
       - PORT=8080
       - KEY_LUCOS_ARACHNE
+    healthcheck:
+      test: ["CMD", "node", "-e", "const n=require('net');const c=n.connect(8080,'127.0.0.1',()=>{c.end();process.exit(0)});c.on('error',()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
   search:
     build: search
     container_name: lucos_arachne_search
@@ -66,6 +90,12 @@ services:
       - PORT=8108
     volumes:
       - typesense_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "--silent", "--fail", "http://localhost:8108/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
   mcp:
     build: ./mcp
     container_name: lucos_arachne_mcp
@@ -78,6 +108,12 @@ services:
     depends_on:
       - triplestore
       - search
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8200/_info')"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
 
 
 volumes:
