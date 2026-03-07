@@ -5,6 +5,7 @@ Exposes the lucos_arachne knowledge graph via the Model Context Protocol.
 """
 
 import os
+from pathlib import Path
 from typing import Optional
 
 import requests
@@ -13,6 +14,27 @@ from mcp.server.fastmcp import FastMCP
 from starlette.applications import Starlette
 from starlette.responses import JSONResponse
 from starlette.routing import Mount, Route
+
+RESOURCES_DIR = Path(__file__).parent / "resources"
+
+# Maps lucOS service names to the graph URIs they contribute to the triplestore.
+# Mirrors ingestor/triplestore.py — keep in sync if either changes.
+SYSTEMS_TO_GRAPHS = {
+    "lucos_eolas": "https://eolas.l42.eu/metadata/all/data/",
+    "lucos_contacts": "https://contacts.l42.eu/people/all",
+    "lucos_media_metadata_api": "https://media-api.l42.eu/v2/export",
+    "foaf": "https://www.w3.org/archive/xmlns.com/foaf/0.1/ontology",
+    "time": "https://www.w3.org/2006/time",
+    "dbpedia_meanOfTransportation": "https://dbpedia.org/ontology/MeanOfTransportation",
+    "skos": "http://www.w3.org/2004/02/skos/core",
+    "owl": "https://www.w3.org/2002/07/owl",
+    "dc": "http://purl.org/dc/terms/",
+    "dcam": "http://purl.org/dc/dcam/",
+    "rdf": "http://www.w3.org/1999/02/22-rdf-syntax-ns",
+    "rdfs": "http://www.w3.org/2000/01/rdf-schema",
+    "loc_iso639-5": "http://id.loc.gov/vocabulary/iso639-5/iso639-5_Language",
+    "loc_mads": "https://id.loc.gov/ontologies/madsrdf/v1.rdf",
+}
 
 # The MCP server must bind on all interfaces so nginx can proxy to it.
 # FastMCP defaults to 127.0.0.1 (localhost-only), which breaks container networking.
@@ -517,6 +539,48 @@ def count_by_property(type: str, property: str) -> str:
     with_prop = int(binding.get("withProp", {}).get("value", 0))
 
     return f"{with_prop:,} of {total:,} {type} entities have a {property} property."
+
+
+@mcp.resource(
+    "resource://arachne/ontology",
+    name="ontology",
+    title="Arachne Ontology Summary",
+    description=(
+        "A human-readable description of the types, properties, and namespaces "
+        "used in the arachne triplestore. Read this before making tool calls to "
+        "understand what kinds of data are available."
+    ),
+    mime_type="text/markdown",
+)
+def get_ontology() -> str:
+    """Return the static ontology summary as a Markdown document."""
+    return (RESOURCES_DIR / "ontology.md").read_text(encoding="utf-8")
+
+
+@mcp.resource(
+    "resource://arachne/data-sources",
+    name="data-sources",
+    title="Arachne Data Sources",
+    description=(
+        "The lucOS services that contribute data to the arachne triplestore, "
+        "and the graph URIs they map to. Use this to understand where data comes from."
+    ),
+    mime_type="text/markdown",
+)
+def get_data_sources() -> str:
+    """Return the systems-to-graphs mapping as a Markdown table."""
+    lines = [
+        "# Arachne Data Sources",
+        "",
+        "The following lucOS services (and external ontologies) contribute data "
+        "to the arachne triplestore. Each source is loaded into a named graph.",
+        "",
+        "| Source | Graph URI |",
+        "|--------|-----------|",
+    ]
+    for system, graph_uri in SYSTEMS_TO_GRAPHS.items():
+        lines.append(f"| `{system}` | `{graph_uri}` |")
+    return "\n".join(lines)
 
 
 async def info(request):
