@@ -480,3 +480,63 @@ def test_count_by_property_property_not_found():
         result = server.count_by_property(type="Track", property="nonExistentProp")
 
     assert "No property found" in result
+
+
+# ---------------------------------------------------------------------------
+# get_ontology resource
+# ---------------------------------------------------------------------------
+
+def test_get_ontology_returns_markdown():
+    """get_ontology returns the contents of the ontology.md file."""
+    result = server.get_ontology()
+    assert isinstance(result, str)
+    assert len(result) > 0
+
+
+def test_get_ontology_contains_key_sections():
+    """get_ontology content includes the main sections described in the issue."""
+    result = server.get_ontology()
+    # Should describe entity types
+    assert "Person" in result
+    assert "Track" in result
+    # Should include prefix mappings
+    assert "foaf:" in result
+    assert "skos:" in result
+
+
+def test_get_ontology_contains_properties():
+    """get_ontology content references common properties for entity types."""
+    result = server.get_ontology()
+    assert "foaf:name" in result or "foaf:birthday" in result
+
+
+# ---------------------------------------------------------------------------
+# get_data_sources resource
+# ---------------------------------------------------------------------------
+
+def test_get_data_sources_returns_string():
+    """get_data_sources returns a non-empty string."""
+    result = server.get_data_sources()
+    assert isinstance(result, str)
+    assert len(result) > 0
+
+
+def test_get_data_sources_contains_all_systems():
+    """get_data_sources lists every system from SYSTEMS_TO_GRAPHS."""
+    result = server.get_data_sources()
+    for system in server.SYSTEMS_TO_GRAPHS:
+        assert system in result, f"Expected system '{system}' to appear in data sources"
+
+
+def test_get_data_sources_contains_graph_uris():
+    """get_data_sources lists the graph URI for each source."""
+    result = server.get_data_sources()
+    for graph_uri in server.SYSTEMS_TO_GRAPHS.values():
+        assert graph_uri in result, f"Expected graph URI '{graph_uri}' to appear in data sources"
+
+
+def test_get_data_sources_is_markdown_table():
+    """get_data_sources output is formatted as a Markdown table."""
+    result = server.get_data_sources()
+    # Should contain table separator row (pipe characters and dashes)
+    assert "|-----" in result
