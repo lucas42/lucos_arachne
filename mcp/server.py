@@ -8,7 +8,11 @@ scaffolding only. Tools will be added in follow-up tickets.
 
 import os
 
+import uvicorn
 from mcp.server.fastmcp import FastMCP
+from starlette.applications import Starlette
+from starlette.responses import JSONResponse
+from starlette.routing import Mount, Route
 
 # The MCP server must bind on all interfaces so nginx can proxy to it.
 # FastMCP defaults to 127.0.0.1 (localhost-only), which breaks container networking.
@@ -22,10 +26,24 @@ mcp = FastMCP(
         "Typesense full-text search index. Use the available tools to explore entities, "
         "types, and relationships in the knowledge graph."
     ),
-    host="0.0.0.0",
-    port=PORT,
     stateless_http=True,
 )
 
+
+async def info(request):
+    return JSONResponse({
+        "system": os.environ.get("SYSTEM", "lucos_arachne"),
+        "checks": {},
+        "metrics": {},
+        "ci": {"circle": "gh/lucas42/lucos_arachne"},
+        "title": "Arachne MCP",
+    })
+
+
+app = Starlette(routes=[
+    Route("/_info", info),
+    Mount("/", app=mcp.streamable_http_app()),
+])
+
 if __name__ == "__main__":
-    mcp.run(transport="streamable-http")
+    uvicorn.run(app, host="0.0.0.0", port=PORT)

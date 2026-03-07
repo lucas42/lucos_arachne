@@ -36,6 +36,16 @@ updates:
     interval: daily
     time: "07:00"
   open-pull-requests-limit: 10
+- package-ecosystem: docker
+  directory: "/mcp"
+  schedule:
+    interval: daily
+    time: "07:00"
+- package-ecosystem: pip
+  directory: "/mcp"
+  schedule:
+    interval: daily
+    time: "07:00"
 - package-ecosystem: "github-actions"
   directory: "/"
   schedule:
