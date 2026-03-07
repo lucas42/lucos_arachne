@@ -114,6 +114,9 @@ def get_entity(uri: str) -> str:
     Args:
         uri: The full URI of the entity to retrieve (e.g. https://arachne.l42.eu/track/123).
     """
+    if ">" in uri or any(c.isspace() for c in uri):
+        return f"Invalid URI: <{uri}> contains characters not permitted in a SPARQL IRI."
+
     query = f"""
     SELECT ?p ?o WHERE {{
         <{uri}> ?p ?o .
