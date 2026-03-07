@@ -11,6 +11,7 @@ services:
       - search
       - ingestor
       - explore
+      - mcp
     environment:
       - PORT
   triplestore:
@@ -65,6 +66,18 @@ services:
       - PORT=8108
     volumes:
       - typesense_data:/data
+  mcp:
+    build: ./mcp
+    container_name: lucos_arachne_mcp
+    image: lucas42/lucos_arachne_mcp
+    restart: always
+    environment:
+      - PORT=8200
+      - KEY_LUCOS_ARACHNE
+      - TYPESENSE_ADMIN_KEY
+    depends_on:
+      - triplestore
+      - search
 
 
 volumes:
