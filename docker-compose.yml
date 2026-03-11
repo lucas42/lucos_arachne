@@ -15,7 +15,7 @@ services:
     environment:
       - PORT
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost/_info"]
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1/_info"]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -36,7 +36,7 @@ services:
         limits:
           memory: 2G
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:3030/$/ping"]
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3030/$/ping"]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -91,7 +91,7 @@ services:
     volumes:
       - typesense_data:/data
     healthcheck:
-      test: ["CMD", "curl", "--silent", "--fail", "http://localhost:8108/health"]
+      test: ["CMD", "curl", "--silent", "--fail", "http://127.0.0.1:8108/health"]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -109,7 +109,7 @@ services:
       - triplestore
       - search
     healthcheck:
-      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8200/_info')"]
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8200/_info')"]
       interval: 10s
       timeout: 5s
       retries: 3
