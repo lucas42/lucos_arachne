@@ -31,6 +31,7 @@ app.get('/_info', catchErrors(async (req, res) => {
 }));
 
 async function checkTriplestore() {
+	const techDetail = 'Authenticated SPARQL count query against the Fuseki triplestore dataset';
 	const query = 'SELECT (COUNT(*) AS ?c) WHERE { ?s a ?o } LIMIT 1';
 	const body = new URLSearchParams({ query });
 	try {
@@ -44,40 +45,42 @@ async function checkTriplestore() {
 			body: body.toString(),
 			signal: AbortSignal.timeout(450),
 		});
-		if (!response.ok) return { ok: false, error: `HTTP ${response.status}` };
-		return { ok: true };
+		if (!response.ok) return { ok: false, techDetail, debug: `HTTP ${response.status}` };
+		return { ok: true, techDetail };
 	} catch (err) {
-		return { ok: false, error: err.message };
+		return { ok: false, techDetail, debug: err.message };
 	}
 }
 
 async function checkSearch() {
+	const techDetail = 'GET /collections/items to confirm Typesense is up and the items collection exists';
 	try {
 		const response = await fetch('http://search:8108/collections/items', {
 			headers: { 'X-TYPESENSE-API-KEY': process.env.KEY_LUCOS_ARACHNE },
 			signal: AbortSignal.timeout(450),
 		});
-		if (!response.ok) return { ok: false, error: `HTTP ${response.status}` };
-		return { ok: true };
+		if (!response.ok) return { ok: false, techDetail, debug: `HTTP ${response.status}` };
+		return { ok: true, techDetail };
 	} catch (err) {
-		return { ok: false, error: err.message };
+		return { ok: false, techDetail, debug: err.message };
 	}
 }
 
 function checkIngestor() {
+	const techDetail = 'TCP connect to ingestor:8099 to confirm the process is running';
 	return new Promise((resolve) => {
 		const timeout = setTimeout(() => {
 			socket.destroy();
-			resolve({ ok: false, error: 'timeout' });
+			resolve({ ok: false, techDetail, debug: 'timeout' });
 		}, 450);
 		const socket = net.connect(8099, 'ingestor', () => {
 			clearTimeout(timeout);
 			socket.end();
-			resolve({ ok: true });
+			resolve({ ok: true, techDetail });
 		});
 		socket.on('error', (err) => {
 			clearTimeout(timeout);
-			resolve({ ok: false, error: err.message });
+			resolve({ ok: false, techDetail, debug: err.message });
 		});
 	});
 }
