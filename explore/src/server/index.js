@@ -1,4 +1,5 @@
 import express from 'express';
+import net from 'net';
 import { middleware as authMiddleware } from './auth.js';
 
 const app = express();
@@ -6,6 +7,80 @@ app.auth = authMiddleware;
 
 app.set('view engine', 'ejs');
 app.use(express.static('./resources', {extensions: ['json']}));
+
+// /_info is unauthenticated and must be registered before the auth middleware.
+app.get('/_info', catchErrors(async (req, res) => {
+	const triplestore = checkTriplestore();
+	const search = checkSearch();
+	const ingestor = checkIngestor();
+	const [triplestoreResult, searchResult, ingestorResult] = await Promise.all([triplestore, search, ingestor]);
+	res.json({
+		system: 'lucos_arachne',
+		checks: {
+			triplestore: triplestoreResult,
+			search: searchResult,
+			ingestor: ingestorResult,
+		},
+		metrics: {},
+		ci: { circle: 'gh/lucas42/lucos_arachne' },
+		network_only: true,
+		title: 'Arachne',
+		show_on_homepage: true,
+		icon: '/icon.png',
+	});
+}));
+
+async function checkTriplestore() {
+	const query = 'SELECT (COUNT(*) AS ?c) WHERE { ?s a ?o } LIMIT 1';
+	const body = new URLSearchParams({ query });
+	try {
+		const response = await fetch('http://triplestore:3030/arachne/sparql', {
+			method: 'POST',
+			headers: {
+				'authorization': `basic ${Buffer.from(`lucos_arachne:${process.env.KEY_LUCOS_ARACHNE}`).toString('base64')}`,
+				'content-type': 'application/x-www-form-urlencoded',
+				'accept': 'application/sparql-results+json',
+			},
+			body: body.toString(),
+			signal: AbortSignal.timeout(450),
+		});
+		if (!response.ok) return { ok: false, error: `HTTP ${response.status}` };
+		return { ok: true };
+	} catch (err) {
+		return { ok: false, error: err.message };
+	}
+}
+
+async function checkSearch() {
+	try {
+		const response = await fetch('http://search:8108/collections/items', {
+			headers: { 'X-TYPESENSE-API-KEY': process.env.KEY_LUCOS_ARACHNE },
+			signal: AbortSignal.timeout(450),
+		});
+		if (!response.ok) return { ok: false, error: `HTTP ${response.status}` };
+		return { ok: true };
+	} catch (err) {
+		return { ok: false, error: err.message };
+	}
+}
+
+function checkIngestor() {
+	return new Promise((resolve) => {
+		const timeout = setTimeout(() => {
+			socket.destroy();
+			resolve({ ok: false, error: 'timeout' });
+		}, 450);
+		const socket = net.connect(8099, 'ingestor', () => {
+			clearTimeout(timeout);
+			socket.end();
+			resolve({ ok: true });
+		});
+		socket.on('error', (err) => {
+			clearTimeout(timeout);
+			resolve({ ok: false, error: err.message });
+		});
+	});
+}
 
 app.use((req, res, next) => app.auth(req, res, next));
 
