@@ -10,14 +10,12 @@ app.use(express.static('./resources', {extensions: ['json']}));
 
 // /_info is unauthenticated and must be registered before the auth middleware.
 app.get('/_info', catchErrors(async (req, res) => {
-	const triplestore = checkTriplestore();
 	const search = checkSearch();
 	const ingestor = checkIngestor();
-	const [triplestoreResult, searchResult, ingestorResult] = await Promise.all([triplestore, search, ingestor]);
+	const [searchResult, ingestorResult] = await Promise.all([search, ingestor]);
 	res.json({
 		system: 'lucos_arachne',
 		checks: {
-			triplestore: triplestoreResult,
 			search: searchResult,
 			ingestor: ingestorResult,
 		},
@@ -29,28 +27,6 @@ app.get('/_info', catchErrors(async (req, res) => {
 		icon: '/icon.png',
 	});
 }));
-
-async function checkTriplestore() {
-	const techDetail = 'Authenticated SPARQL count query against the Fuseki triplestore dataset';
-	const query = 'SELECT (COUNT(*) AS ?c) WHERE { ?s a ?o } LIMIT 1';
-	const body = new URLSearchParams({ query });
-	try {
-		const response = await fetch('http://triplestore:3030/arachne/sparql', {
-			method: 'POST',
-			headers: {
-				'authorization': `basic ${Buffer.from(`lucos_arachne:${process.env.KEY_LUCOS_ARACHNE}`).toString('base64')}`,
-				'content-type': 'application/x-www-form-urlencoded',
-				'accept': 'application/sparql-results+json',
-			},
-			body: body.toString(),
-			signal: AbortSignal.timeout(450),
-		});
-		if (!response.ok) return { ok: false, techDetail, debug: `HTTP ${response.status}` };
-		return { ok: true, techDetail };
-	} catch (err) {
-		return { ok: false, techDetail, debug: err.message };
-	}
-}
 
 async function checkSearch() {
 	const techDetail = 'GET /collections/items to confirm Typesense is up and the items collection exists';
