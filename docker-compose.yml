@@ -7,11 +7,16 @@ services:
     image: lucas42/lucos_arachne_web
     restart: always
     depends_on:
-      - triplestore
-      - search
-      - ingestor
-      - explore
-      - mcp
+      triplestore:
+        condition: service_healthy
+      search:
+        condition: service_healthy
+      ingestor:
+        condition: service_healthy
+      explore:
+        condition: service_healthy
+      mcp:
+        condition: service_healthy
     environment:
       - PORT
     healthcheck:
@@ -106,8 +111,10 @@ services:
       - KEY_LUCOS_ARACHNE
       - TYPESENSE_ADMIN_KEY
     depends_on:
-      - triplestore
-      - search
+      triplestore:
+        condition: service_healthy
+      search:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8200/_info')"]
       interval: 10s
