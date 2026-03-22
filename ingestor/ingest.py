@@ -18,7 +18,10 @@ if __name__ == "__main__":
 	# Defer the initial ingest to avoid contributing to startup load spikes
 	# when multiple containers start simultaneously (thundering herd).
 	# Uses a random jitter within the delay window to stagger concurrent starts.
-	startup_delay = int(os.environ.get("INGEST_STARTUP_DELAY", "30"))
+	try:
+		startup_delay = int(os.environ.get("INGEST_STARTUP_DELAY", "30"))
+	except ValueError:
+		startup_delay = 30
 	if startup_delay > 0:
 		jitter = random.uniform(0, startup_delay)
 		print(f"Deferring initial ingest by {jitter:.0f}s (max {startup_delay}s)")
