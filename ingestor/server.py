@@ -40,7 +40,7 @@ class WebhookHandler(BaseHTTPRequestHandler):
 				self.send_header("Content-type", "text/plain")
 				self.end_headers()
 				self.wfile.write(bytes("Updated", "utf-8"))
-			if event["type"].endswith("Deleted"):
+			elif event["type"].endswith("Deleted"):
 				delete_item_in_triplestore(event["url"], systems_to_graphs[event["source"]])
 				delete_doc_in_searchindex(event["source"], event["url"])
 				self.send_response(200, "OK")
