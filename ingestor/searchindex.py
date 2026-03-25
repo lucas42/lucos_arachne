@@ -338,22 +338,30 @@ def cleanup_searchindex(valid_item_ids, valid_track_ids):
 	Remove documents from the search index that are not in the provided sets.
 	This cleans up stale docs that were deleted from data sources but not
 	removed from the index (e.g. due to a missed webhook).
+	Skips cleanup for a collection if no valid IDs were provided, to avoid
+	accidentally wiping all data when sources return empty results.
 	"""
-	existing_item_ids = _get_all_doc_ids("items")
-	stale_item_ids = existing_item_ids - valid_item_ids
-	for doc_id in stale_item_ids:
-		escaped_id = urllib.parse.quote_plus(doc_id)
-		typesense_client.collections["items"].documents[escaped_id].delete()
-	if stale_item_ids:
-		print(f"Cleaned up {len(stale_item_ids)} stale documents from items collection")
+	if valid_item_ids:
+		existing_item_ids = _get_all_doc_ids("items")
+		stale_item_ids = existing_item_ids - valid_item_ids
+		for doc_id in stale_item_ids:
+			escaped_id = urllib.parse.quote_plus(doc_id)
+			typesense_client.collections["items"].documents[escaped_id].delete()
+		if stale_item_ids:
+			print(f"Cleaned up {len(stale_item_ids)} stale documents from items collection")
+	else:
+		print("Warning: no items ingested — skipping items collection cleanup")
 
-	existing_track_ids = _get_all_doc_ids("tracks")
-	stale_track_ids = existing_track_ids - valid_track_ids
-	for doc_id in stale_track_ids:
-		escaped_id = urllib.parse.quote_plus(doc_id)
-		typesense_client.collections["tracks"].documents[escaped_id].delete()
-	if stale_track_ids:
-		print(f"Cleaned up {len(stale_track_ids)} stale documents from tracks collection")
+	if valid_track_ids:
+		existing_track_ids = _get_all_doc_ids("tracks")
+		stale_track_ids = existing_track_ids - valid_track_ids
+		for doc_id in stale_track_ids:
+			escaped_id = urllib.parse.quote_plus(doc_id)
+			typesense_client.collections["tracks"].documents[escaped_id].delete()
+		if stale_track_ids:
+			print(f"Cleaned up {len(stale_track_ids)} stale documents from tracks collection")
+	else:
+		print("Warning: no tracks ingested — skipping tracks collection cleanup")
 
 
 def delete_doc_in_searchindex(system, doc_id):
