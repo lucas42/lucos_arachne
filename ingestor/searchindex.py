@@ -166,7 +166,8 @@ def graph_to_track_docs(graph: Graph):
 		albums = []
 		for o in graph.objects(subj, DCTERMS.isPartOf):
 			uri = str(o)
-			if "musicbrainz.org" in uri:
+			parsed_host = urllib.parse.urlparse(uri).hostname or ""
+			if parsed_host == "musicbrainz.org" or parsed_host.endswith(".musicbrainz.org"):
 				continue
 			val = _extract_search_url_value(uri)
 			if val:
