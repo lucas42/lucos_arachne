@@ -37,7 +37,10 @@ if __name__ == "__main__":
 			all_item_ids |= item_ids
 			all_track_ids |= track_ids
 		cleanup_triplestore(systems_to_graphs.values())
-		cleanup_searchindex(all_item_ids, all_track_ids)
+		if all_item_ids:
+			cleanup_searchindex(all_item_ids, all_track_ids)
+		else:
+			print("Warning: no items ingested from any source — skipping search index cleanup to avoid accidental data loss")
 
 		updateLoganne(type="knowledgeIngest", humanReadable="Data ingested into knowledge graph", url=BASE_URL)
 
