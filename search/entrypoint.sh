@@ -113,5 +113,38 @@ else
 	echo -e "\nCollection 'items' created."
 fi
 
+# Check if tracks collection already exists
+if curl -s -H "X-TYPESENSE-API-KEY: ${TYPESENSE_ADMIN_KEY}" \
+	"${TYPESENSE_URL}/collections/tracks" | grep -q '"name":"tracks"'; then
+	echo "Collection 'tracks' already exists, skipping schema creation."
+else
+	echo "Creating 'tracks' collection..."
+	curl -X POST "${TYPESENSE_URL}/collections" \
+		-H "X-TYPESENSE-API-KEY: ${TYPESENSE_ADMIN_KEY}" \
+		-H "Content-Type: application/json" \
+		-d '{
+			"name": "tracks",
+			"fields": [
+				{"name": "title", "type": "string", "sort": true},
+				{"name": "artist", "type": "string[]", "facet": true, "optional": true},
+				{"name": "album", "type": "string[]", "facet": true, "optional": true},
+				{"name": "genre", "type": "string[]", "facet": true, "optional": true},
+				{"name": "composer", "type": "string[]", "facet": true, "optional": true},
+				{"name": "producer", "type": "string[]", "facet": true, "optional": true},
+				{"name": "language", "type": "string[]", "facet": true, "optional": true},
+				{"name": "year", "type": "string", "facet": true, "optional": true},
+				{"name": "rating", "type": "int32", "facet": true, "optional": true},
+				{"name": "lyrics", "type": "string", "optional": true, "full_text_search": true},
+				{"name": "provenance", "type": "string", "facet": true, "optional": true},
+				{"name": "duration", "type": "int32", "optional": true},
+				{"name": "offence", "type": "string[]", "facet": true, "optional": true},
+				{"name": "comment", "type": "string", "optional": true, "full_text_search": true},
+				{"name": "soundtrack", "type": "string[]", "facet": true, "optional": true}
+			],
+			"default_sorting_field": "title"
+		}' --silent --show-error --fail-with-body
+	echo -e "\nCollection 'tracks' created."
+fi
+
 
 wait $TYPESENSE_PID

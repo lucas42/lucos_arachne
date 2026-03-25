@@ -1,5 +1,6 @@
-import os, sys
+import os, sys, re
 from rdflib import Graph, Namespace, RDF, RDFS, FOAF, SKOS, DC, Literal
+from rdflib.namespace import DCTERMS
 import typesense
 import urllib.parse
 
@@ -7,6 +8,7 @@ import urllib.parse
 MO = Namespace("http://purl.org/ontology/mo/")
 LOC_NS = Namespace("http://www.loc.gov/mads/rdf/v1#")
 EOLAS_NS = Namespace(f"https://eolas.l42.eu/ontology/")
+SDO = Namespace("https://schema.org/")
 
 # RDF/OWL types which shouldn't be indexed in search index
 IGNORE_TYPES = [
@@ -104,6 +106,177 @@ def graph_to_typesense_docs(graph: Graph):
 	return list(docs.values())
 
 
+def _extract_search_url_value(uri_str):
+	"""Extract the decoded query parameter value from a search URL like
+	https://media-metadata.l42.eu/search?p.artist=The%20Beatles -> 'The Beatles'
+	"""
+	parsed = urllib.parse.urlparse(uri_str)
+	params = urllib.parse.parse_qs(parsed.query)
+	for key, values in params.items():
+		if key.startswith("p.") and values:
+			return values[0]
+	return None
+
+def _extract_language_code(uri_str):
+	"""Extract language code from a URI like
+	https://eolas.l42.eu/metadata/language/fr/ -> 'fr'
+	"""
+	match = re.search(r'/language/([^/]+)/?$', uri_str)
+	return match.group(1) if match else None
+
+def _parse_iso8601_duration(value_str):
+	"""Parse an ISO 8601 duration like PT180S to integer seconds."""
+	match = re.match(r'^PT(\d+)S$', value_str)
+	return int(match.group(1)) if match else None
+
+def graph_to_track_docs(graph: Graph):
+	"""
+	Convert an RDFLib Graph into a list of track documents
+	ready for indexing in the Typesense 'tracks' collection.
+	Only includes subjects with rdf:type mo:Track.
+	"""
+	docs = {}
+
+	for subj in set(graph.subjects()):
+		# Only include mo:Track subjects
+		if (subj, RDF.type, MO.Track) not in graph:
+			continue
+
+		doc = {"id": str(subj)}
+
+		# title (skos:prefLabel)
+		for o in graph.objects(subj, SKOS.prefLabel):
+			if isinstance(o, Literal):
+				doc["title"] = str(o)
+				break
+
+		if "title" not in doc:
+			continue
+
+		# artist (foaf:maker) — search URL values
+		artists = []
+		for o in graph.objects(subj, FOAF.maker):
+			val = _extract_search_url_value(str(o))
+			if val:
+				artists.append(val)
+		if artists:
+			doc["artist"] = artists
+
+		# album (dc:isPartOf) — search URL values only, skip MusicBrainz URLs
+		albums = []
+		for o in graph.objects(subj, DCTERMS.isPartOf):
+			uri = str(o)
+			parsed_host = urllib.parse.urlparse(uri).hostname or ""
+			if parsed_host == "musicbrainz.org" or parsed_host.endswith(".musicbrainz.org"):
+				continue
+			val = _extract_search_url_value(uri)
+			if val:
+				albums.append(val)
+		if albums:
+			doc["album"] = albums
+
+		# genre (mo:genre) — search URL values
+		genres = []
+		for o in graph.objects(subj, MO.genre):
+			val = _extract_search_url_value(str(o))
+			if val:
+				genres.append(val)
+		if genres:
+			doc["genre"] = genres
+
+		# composer (mo:composer) — search URL values
+		composers = []
+		for o in graph.objects(subj, MO.composer):
+			val = _extract_search_url_value(str(o))
+			if val:
+				composers.append(val)
+		if composers:
+			doc["composer"] = composers
+
+		# producer (mo:producer) — search URL values
+		producers = []
+		for o in graph.objects(subj, MO.producer):
+			val = _extract_search_url_value(str(o))
+			if val:
+				producers.append(val)
+		if producers:
+			doc["producer"] = producers
+
+		# language (dc:language) — extract code from URI path
+		languages = []
+		for o in graph.objects(subj, DCTERMS.language):
+			code = _extract_language_code(str(o))
+			if code:
+				languages.append(code)
+		if languages:
+			doc["language"] = languages
+
+		# year (dc:date)
+		for o in graph.objects(subj, DCTERMS.date):
+			if isinstance(o, Literal):
+				doc["year"] = str(o)
+				break
+
+		# rating (schema:ratingValue)
+		for o in graph.objects(subj, SDO.ratingValue):
+			if isinstance(o, Literal):
+				try:
+					doc["rating"] = int(str(o))
+				except ValueError:
+					pass
+				break
+
+		# lyrics (mo:lyrics)
+		for o in graph.objects(subj, MO.lyrics):
+			if isinstance(o, Literal):
+				doc["lyrics"] = str(o)
+				break
+
+		# provenance (dc:source) — search URL value
+		for o in graph.objects(subj, DCTERMS.source):
+			val = _extract_search_url_value(str(o))
+			if val:
+				doc["provenance"] = val
+				break
+
+		# duration (mo:duration) — parse PT{n}S to integer seconds
+		for o in graph.objects(subj, MO.duration):
+			seconds = _parse_iso8601_duration(str(o))
+			if seconds is not None:
+				doc["duration"] = seconds
+				break
+
+		# offence (custom trigger predicate) — search URL values
+		offences = []
+		for p, o in graph.predicate_objects(subj):
+			if str(p).endswith("/ontology#trigger"):
+				val = _extract_search_url_value(str(o))
+				if val:
+					offences.append(val)
+		if offences:
+			doc["offence"] = offences
+
+		# comment (schema:comment)
+		for o in graph.objects(subj, SDO.comment):
+			if isinstance(o, Literal):
+				doc["comment"] = str(o)
+				break
+
+		# soundtrack (custom soundtrack predicate) — search URL values
+		soundtracks = []
+		for p, o in graph.predicate_objects(subj):
+			if str(p).endswith("/ontology#soundtrack"):
+				val = _extract_search_url_value(str(o))
+				if val:
+					soundtracks.append(val)
+		if soundtracks:
+			doc["soundtrack"] = soundtracks
+
+		docs[doc["id"]] = doc
+
+	return list(docs.values())
+
+
 typesense_client = typesense.Client({
     "nodes": [{
         "host": "search",
@@ -124,12 +297,21 @@ def update_searchindex(system, content, content_type):
 	docs = graph_to_typesense_docs(g)
 	if len(docs) == 0:
 		print(f"No docs updated in search index, from {system}", flush=True)
-		return
-	results = typesense_client.collections["items"].documents.import_(docs, {"action": "upsert"})
-	for result in results:
-		if not result["success"]:
-			raise ValueError(f"Error returned from search index upsert: {result["error"]}")
-	print(f"Upserted {len(results)} documents to triplestore from {system}")
+	else:
+		results = typesense_client.collections["items"].documents.import_(docs, {"action": "upsert"})
+		for result in results:
+			if not result["success"]:
+				raise ValueError(f"Error returned from search index upsert: {result['error']}")
+		print(f"Upserted {len(results)} documents to items collection from {system}")
+
+	# Upsert into tracks collection for track-type subjects
+	track_docs = graph_to_track_docs(g)
+	if len(track_docs) > 0:
+		track_results = typesense_client.collections["tracks"].documents.import_(track_docs, {"action": "upsert"})
+		for result in track_results:
+			if not result["success"]:
+				raise ValueError(f"Error returned from tracks search index upsert: {result['error']}")
+		print(f"Upserted {len(track_results)} documents to tracks collection from {system}")
 
 def delete_doc_in_searchindex(system, doc_id):
 	if not system.startswith("lucos_"):
@@ -138,3 +320,9 @@ def delete_doc_in_searchindex(system, doc_id):
 	# Typesense library doesn't do escaping when it's needed.
 	escaped_id = urllib.parse.quote_plus(doc_id)
 	typesense_client.collections["items"].documents[escaped_id].delete()
+
+	# Also try to delete from the tracks collection (may not exist there)
+	try:
+		typesense_client.collections["tracks"].documents[escaped_id].delete()
+	except typesense.exceptions.ObjectNotFound:
+		pass
