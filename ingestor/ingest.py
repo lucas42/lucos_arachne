@@ -5,7 +5,7 @@ Bulk ingests RDF from other systems and adds data to the triplestore and searchi
 import sys, os, time, random
 from authorised_fetch import fetch_url
 from triplestore import systems_to_graphs, replace_graph_in_triplestore, cleanup_triplestore
-from searchindex import update_searchindex
+from searchindex import update_searchindex, cleanup_searchindex
 from loganne import updateLoganne
 from schedule_tracker import updateScheduleTracker
 
@@ -28,11 +28,16 @@ if __name__ == "__main__":
 		time.sleep(jitter)
 
 	try:
+		all_item_ids = set()
+		all_track_ids = set()
 		for system, url in systems_to_graphs.items():
 			(content, content_type) = fetch_url(system, url)
 			replace_graph_in_triplestore(url, content, content_type)
-			update_searchindex(system, content, content_type)
+			(item_ids, track_ids) = update_searchindex(system, content, content_type)
+			all_item_ids |= item_ids
+			all_track_ids |= track_ids
 		cleanup_triplestore(systems_to_graphs.values())
+		cleanup_searchindex(all_item_ids, all_track_ids)
 
 		updateLoganne(type="knowledgeIngest", humanReadable="Data ingested into knowledge graph", url=BASE_URL)
 

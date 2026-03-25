@@ -1,4 +1,4 @@
-import os, sys, re
+import json, os, sys, re
 from rdflib import Graph, Namespace, RDF, RDFS, FOAF, SKOS, DC, Literal
 from rdflib.namespace import DCTERMS
 import typesense
@@ -289,11 +289,16 @@ typesense_client = typesense.Client({
 
 
 def update_searchindex(system, content, content_type):
+	"""
+	Upserts documents into the search index from the given system's RDF content.
+	Returns a tuple of (item_ids, track_ids) that were upserted.
+	"""
 	if not system.startswith("lucos_"):
-		return
+		return (set(), set())
 	g = Graph()
 	g.parse(data=content, format=content_type)
 
+	item_ids = set()
 	docs = graph_to_typesense_docs(g)
 	if len(docs) == 0:
 		print(f"No docs updated in search index, from {system}", flush=True)
@@ -303,8 +308,10 @@ def update_searchindex(system, content, content_type):
 			if not result["success"]:
 				raise ValueError(f"Error returned from search index upsert: {result['error']}")
 		print(f"Upserted {len(results)} documents to items collection from {system}")
+		item_ids = {doc["id"] for doc in docs}
 
 	# Upsert into tracks collection for track-type subjects
+	track_ids = set()
 	track_docs = graph_to_track_docs(g)
 	if len(track_docs) > 0:
 		track_results = typesense_client.collections["tracks"].documents.import_(track_docs, {"action": "upsert"})
@@ -312,6 +319,50 @@ def update_searchindex(system, content, content_type):
 			if not result["success"]:
 				raise ValueError(f"Error returned from tracks search index upsert: {result['error']}")
 		print(f"Upserted {len(track_results)} documents to tracks collection from {system}")
+		track_ids = {doc["id"] for doc in track_docs}
+
+	return (item_ids, track_ids)
+
+def _get_all_doc_ids(collection_name):
+	"""Export all document IDs from a Typesense collection."""
+	ids = set()
+	jsonl = typesense_client.collections[collection_name].documents.export({"include_fields": "id"})
+	for line in jsonl.strip().split("\n"):
+		if line:
+			ids.add(json.loads(line)["id"])
+	return ids
+
+
+def cleanup_searchindex(valid_item_ids, valid_track_ids):
+	"""
+	Remove documents from the search index that are not in the provided sets.
+	This cleans up stale docs that were deleted from data sources but not
+	removed from the index (e.g. due to a missed webhook).
+	Skips cleanup for a collection if no valid IDs were provided, to avoid
+	accidentally wiping all data when sources return empty results.
+	"""
+	if valid_item_ids:
+		existing_item_ids = _get_all_doc_ids("items")
+		stale_item_ids = existing_item_ids - valid_item_ids
+		for doc_id in stale_item_ids:
+			escaped_id = urllib.parse.quote_plus(doc_id)
+			typesense_client.collections["items"].documents[escaped_id].delete()
+		if stale_item_ids:
+			print(f"Cleaned up {len(stale_item_ids)} stale documents from items collection")
+	else:
+		print("Warning: no items ingested — skipping items collection cleanup")
+
+	if valid_track_ids:
+		existing_track_ids = _get_all_doc_ids("tracks")
+		stale_track_ids = existing_track_ids - valid_track_ids
+		for doc_id in stale_track_ids:
+			escaped_id = urllib.parse.quote_plus(doc_id)
+			typesense_client.collections["tracks"].documents[escaped_id].delete()
+		if stale_track_ids:
+			print(f"Cleaned up {len(stale_track_ids)} stale documents from tracks collection")
+	else:
+		print("Warning: no tracks ingested — skipping tracks collection cleanup")
+
 
 def delete_doc_in_searchindex(system, doc_id):
 	if not system.startswith("lucos_"):
