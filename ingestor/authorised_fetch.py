@@ -16,7 +16,7 @@ def fetch_url(system, url):
 			sys.exit(
 				f"No {key_var} environment variable found — won't be able to authenticate against ingestion endpoint {url}"
 			)
-		auth_header = {"Authorization": f"key {key}"}
+		auth_header = {"Authorization": f"Bearer {key}"}
 
 	# In dev environment, where URLs can be referencing localhost, switch domain to the docker internal domain to allow requests between containers
 	def map_localhost(url) -> str:
@@ -53,4 +53,14 @@ def fetch_url(system, url):
 	# Schema.org http → https
 	content = re.sub(r"http://schema\.org/", "https://schema.org/", content)
 	content_type = resp.headers.get("Content-Type", "").split(";")[0]
+
+	# Validate content-type is RDF before returning — uploading non-RDF to Fuseki gives a
+	# cryptic 400 and makes diagnosis hard. Fail fast with a clear error instead.
+	RDF_CONTENT_TYPES = {"text/turtle", "application/rdf+xml", "application/ld+json", "application/n-triples"}
+	if content_type not in RDF_CONTENT_TYPES:
+		raise ValueError(
+			f"Expected RDF content from <{url}> but got Content-Type {content_type!r}. "
+			f"Check auth headers and that the endpoint supports content negotiation for RDF."
+		)
+
 	return (content, content_type)
