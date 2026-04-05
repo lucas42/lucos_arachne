@@ -28,11 +28,15 @@ session.auth = ("lucos_arachne", KEY_LUCOS_ARACHNE)
 session.headers.update({"User-Agent": "lucos_arachne_ingestor"})
 
 def add_triples(graph_uri, content, content_type):
+	print(f"Uploading to graph <{graph_uri}> with content-type {content_type!r} ({len(content)} bytes)")
 	upload_resp = session.post(
-		f"http://triplestore:3030/raw_arachne/data?graph={graph_uri}",
+		"http://triplestore:3030/raw_arachne/data",
+		params={"graph": graph_uri},
 		headers={"Content-Type": content_type},
 		data=content.encode("utf-8"),
 	)
+	if not upload_resp.ok:
+		print(f"Triplestore upload failed ({upload_resp.status_code}): {upload_resp.text[:500]}")
 	upload_resp.raise_for_status()
 	try:
 		json_resp = upload_resp.json()

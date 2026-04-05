@@ -12,12 +12,14 @@ app.use(express.static('./resources', {extensions: ['json']}));
 app.get('/_info', catchErrors(async (req, res) => {
 	const search = checkSearch();
 	const ingestor = checkIngestor();
-	const [searchResult, ingestorResult] = await Promise.all([search, ingestor]);
+	const triplestore = checkTriplestore();
+	const [searchResult, ingestorResult, triplestoreResult] = await Promise.all([search, ingestor, triplestore]);
 	res.json({
 		system: 'lucos_arachne',
 		checks: {
 			search: searchResult,
 			ingestor: ingestorResult,
+			triplestore: triplestoreResult,
 		},
 		metrics: {},
 		ci: { circle: 'gh/lucas42/lucos_arachne' },
@@ -59,6 +61,27 @@ function checkIngestor() {
 			resolve({ ok: false, techDetail, debug: err.message });
 		});
 	});
+}
+
+async function checkTriplestore() {
+	const techDetail = 'ASK query against http://triplestore:3030/raw_arachne/sparql to confirm the triplestore is up and accepting queries';
+	try {
+		const body = new URLSearchParams({ query: 'ASK {}' });
+		const response = await fetch('http://triplestore:3030/raw_arachne/sparql', {
+			method: 'POST',
+			headers: {
+				'Content-Type': 'application/x-www-form-urlencoded',
+				'Accept': 'application/sparql-results+json',
+				'Authorization': `Basic ${Buffer.from(`lucos_arachne:${process.env.KEY_LUCOS_ARACHNE}`).toString('base64')}`,
+			},
+			body: body.toString(),
+			signal: AbortSignal.timeout(450),
+		});
+		if (!response.ok) return { ok: false, techDetail, debug: `HTTP ${response.status}` };
+		return { ok: true, techDetail };
+	} catch (err) {
+		return { ok: false, techDetail, debug: err.message };
+	}
 }
 
 app.use((req, res, next) => app.auth(req, res, next));
