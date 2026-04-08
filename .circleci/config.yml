@@ -9,10 +9,13 @@ jobs:
       - checkout
       - run:
           name: Install dependencies
-          command: pip install -r mcp/requirements.txt -r mcp/requirements-test.txt
+          command: pip install -r mcp/requirements.txt -r mcp/requirements-test.txt -r ingestor/requirements-test.txt
       - run:
-          name: Run tests
+          name: Run MCP tests
           command: cd mcp && pytest
+      - run:
+          name: Run ingestor tests
+          command: cd ingestor && pytest
 workflows:
   version: 2
   build-deploy:
