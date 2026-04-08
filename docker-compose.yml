@@ -33,13 +33,13 @@ services:
     environment:
       - PORT=3030
       - CLIENT_KEYS
-      - JVM_ARGS=-Xmx1600m
+      - JVM_ARGS=-Xmx768m
     volumes:
       - fuseki_data:/fuseki/run/databases
     deploy:
       resources:
         limits:
-          memory: 2G
+          memory: 1G
     restart: always
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3030/$/ping"]

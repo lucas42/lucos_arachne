@@ -80,6 +80,74 @@ def replace_item_in_triplestore(item_uri, graph_uri, content, content_type):
 	add_triples(graph_uri, content, content_type)
 
 
+INFERRED_GRAPH = "urn:lucos:inferred"
+
+def compute_transitive_closures():
+	"""
+	Computes transitive closures for all owl:TransitiveProperty properties in the
+	triplestore and stores the non-direct inferred pairs in the urn:lucos:inferred
+	named graph.  Direct pairs stay in their source named graphs and are visible
+	via the union default graph on the arachne endpoint.
+	"""
+	# Find all transitive properties across all named graphs
+	resp = session.post(
+		"http://triplestore:3030/raw_arachne/sparql",
+		headers={"Accept": "application/json"},
+		data={"query": "SELECT DISTINCT ?p WHERE { GRAPH ?g { ?p a <http://www.w3.org/2002/07/owl#TransitiveProperty> } }"},
+	)
+	resp.raise_for_status()
+	transitive_props = [b["p"]["value"] for b in resp.json()["results"]["bindings"]]
+
+	if not transitive_props:
+		print("No owl:TransitiveProperty properties found — clearing inferred graph")
+		replace_graph_in_triplestore(INFERRED_GRAPH, "", "text/turtle")
+		return
+
+	print(f"Found {len(transitive_props)} transitive propert{'y' if len(transitive_props) == 1 else 'ies'}: {', '.join('<' + p + '>' for p in transitive_props)}")
+
+	inferred_lines = []
+
+	for prop in transitive_props:
+		resp = session.post(
+			"http://triplestore:3030/raw_arachne/sparql",
+			headers={"Accept": "application/json"},
+			data={"query": f"SELECT DISTINCT ?s ?o WHERE {{ GRAPH ?g {{ ?s <{prop}> ?o }} }}"},
+		)
+		resp.raise_for_status()
+
+		# Build adjacency map: node → set of direct successors
+		direct = {}
+		for b in resp.json()["results"]["bindings"]:
+			s = b["s"]["value"]
+			o = b["o"]["value"]
+			direct.setdefault(s, set()).add(o)
+
+		direct_pairs = {(s, o) for s, objs in direct.items() for o in objs}
+		inferred_for_prop = []
+
+		for start in direct:
+			visited = set()
+			queue = list(direct.get(start, []))
+			while queue:
+				node = queue.pop(0)
+				if node in visited:
+					continue
+				visited.add(node)
+				if (start, node) not in direct_pairs:
+					inferred_for_prop.append((start, node))
+				for next_node in direct.get(node, []):
+					if next_node not in visited:
+						queue.append(next_node)
+
+		print(f"  <{prop}>: {len(direct_pairs)} direct pairs → {len(inferred_for_prop)} inferred")
+		for s, o in inferred_for_prop:
+			inferred_lines.append(f"<{s}> <{prop}> <{o}> .")
+
+	turtle_content = "\n".join(inferred_lines)
+	print(f"Writing {len(inferred_lines)} inferred triple{'s' if len(inferred_lines) != 1 else ''} to <{INFERRED_GRAPH}>")
+	replace_graph_in_triplestore(INFERRED_GRAPH, turtle_content, "text/turtle")
+
+
 # Cleans up any graphs in the triplestore which aren't in the list provided
 def cleanup_triplestore(graph_uris):
 	resp = session.post(

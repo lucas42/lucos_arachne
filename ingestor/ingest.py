@@ -4,7 +4,7 @@ Bulk ingests RDF from other systems and adds data to the triplestore and searchi
 """
 import sys, os, time, random
 from authorised_fetch import fetch_url
-from triplestore import live_systems, ontology_cache, ONTOLOGIES_DIR, replace_graph_in_triplestore, cleanup_triplestore
+from triplestore import live_systems, ontology_cache, ONTOLOGIES_DIR, INFERRED_GRAPH, replace_graph_in_triplestore, cleanup_triplestore, compute_transitive_closures
 from searchindex import update_searchindex, cleanup_searchindex
 from loganne import updateLoganne
 from schedule_tracker import updateScheduleTracker
@@ -55,7 +55,15 @@ if __name__ == "__main__":
 				error_message = f"Ingest of {system} failed: {e}"
 				print(error_message, flush=True)
 				updateScheduleTracker(success=False, system=tracker_system, message=error_message)
-		all_graph_uris = list(live_systems.values()) + [graph_uri for graph_uri, _, _ in ontology_cache.values()]
+		tracker_system = "lucos_arachne_ingestor_inference"
+		try:
+			compute_transitive_closures()
+			updateScheduleTracker(success=True, system=tracker_system)
+		except Exception as e:
+			error_message = f"Transitive closure computation failed: {e}"
+			print(error_message, flush=True)
+			updateScheduleTracker(success=False, system=tracker_system, message=error_message)
+		all_graph_uris = list(live_systems.values()) + [graph_uri for graph_uri, _, _ in ontology_cache.values()] + [INFERRED_GRAPH]
 		cleanup_triplestore(all_graph_uris)
 		cleanup_searchindex(all_item_ids, all_track_ids)
 

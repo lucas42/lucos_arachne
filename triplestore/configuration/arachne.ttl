@@ -17,37 +17,20 @@
 		fuseki:operation  fuseki:gsp-rw
 	];
 	fuseki:serviceQuery   "query", "sparql" ;
-	fuseki:dataset        :rawDataset ;
+	fuseki:dataset        :dataset ;
 .
 
-# Reasoning endpoint - read only
-:reasoningService a fuseki:Service ;
-	fuseki:dataset                 :inferedDataset ;
+# Read endpoint - queries union of all named graphs (includes urn:lucos:inferred)
+# Inference was removed from Fuseki; transitive closures are pre-computed by the ingestor.
+:readService a fuseki:Service ;
+	fuseki:dataset                 :dataset ;
 	fuseki:name                    "arachne" ;
 	fuseki:serviceQuery            "query", "sparql" ;
 	fuseki:serviceReadGraphStore   "get" ;
 .
 
-# Inference dataset
-:inferedDataset rdf:type ja:RDFDataset ;
-	ja:defaultGraph :inferenceModel ;
-.
-
-# Inference model
-:inferenceModel a ja:InfModel ;
-	ja:baseModel :unionGraph ;
-	ja:reasoner [
-		ja:reasonerURL <http://jena.hpl.hp.com/2003/OWLMicroFBRuleReasoner> ;
-	] ;
-.
-
-# Intermediate graph referencing the default union graph
-:unionGraph rdf:type tdb2:GraphTDB ;
-	tdb2:dataset :rawDataset ;
-	tdb2:graphName <urn:x-arq:UnionGraph> ;
-.
-
-# The location of the TDB dataset
-:rawDataset rdf:type tdb2:DatasetTDB ;
+# TDB2 dataset - union default graph enabled so queries without a GRAPH clause see all named graphs
+:dataset rdf:type tdb2:DatasetTDB ;
 	tdb2:location "/fuseki/run/databases/arachne" ;
+	tdb2:unionDefaultGraph true ;
 .
