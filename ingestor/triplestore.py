@@ -111,7 +111,7 @@ def compute_transitive_closures():
 		resp = session.post(
 			"http://triplestore:3030/raw_arachne/sparql",
 			headers={"Accept": "application/json"},
-			data={"query": f"SELECT DISTINCT ?s ?o WHERE {{ GRAPH ?g {{ ?s <{prop}> ?o }} }}"},
+			data={"query": f"SELECT DISTINCT ?s ?o WHERE {{ GRAPH ?g {{ ?s <{prop}> ?o }} FILTER(?g != <{INFERRED_GRAPH}>) }}"},
 		)
 		resp.raise_for_status()
 
