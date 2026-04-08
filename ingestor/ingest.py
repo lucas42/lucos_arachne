@@ -68,6 +68,8 @@ if __name__ == "__main__":
 		cleanup_searchindex(all_item_ids, all_track_ids)
 
 		updateLoganne(type="knowledgeIngest", humanReadable="Data ingested into knowledge graph", url=BASE_URL)
+		updateScheduleTracker(success=True, system="lucos_arachne_ingestor")
 	except Exception as e:
 		error_message = f"Ingest failed: {e}"
+		updateScheduleTracker(success=False, system="lucos_arachne_ingestor", message=error_message)
 		sys.exit(error_message)
