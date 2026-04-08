@@ -1,5 +1,6 @@
 import express from 'express';
 import net from 'net';
+import rateLimit from 'express-rate-limit';
 import { middleware as authMiddleware } from './auth.js';
 
 const app = express();
@@ -62,6 +63,8 @@ function checkIngestor() {
 }
 
 
+app.set('trust proxy', 1);
+app.use(rateLimit({ windowMs: 15 * 60 * 1000, limit: 100 }));
 app.use((req, res, next) => app.auth(req, res, next));
 
 app.get('/', catchErrors(async (req, res) => {
