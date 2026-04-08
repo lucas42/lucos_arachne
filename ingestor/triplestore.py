@@ -81,70 +81,105 @@ def replace_item_in_triplestore(item_uri, graph_uri, content, content_type):
 
 
 INFERRED_GRAPH = "urn:lucos:inferred"
+OWL_TRANSITIVE = "http://www.w3.org/2002/07/owl#TransitiveProperty"
+OWL_INVERSE_OF  = "http://www.w3.org/2002/07/owl#inverseOf"
 
-def compute_transitive_closures():
-	"""
-	Computes transitive closures for all owl:TransitiveProperty properties in the
-	triplestore and stores the non-direct inferred pairs in the urn:lucos:inferred
-	named graph.  Direct pairs stay in their source named graphs and are visible
-	via the union default graph on the arachne endpoint.
-	"""
-	# Find all transitive properties across all named graphs
+def _sparql_pairs(prop):
+	"""Return a set of (subject, object) pairs for prop, excluding the inferred graph."""
 	resp = session.post(
 		"http://triplestore:3030/raw_arachne/sparql",
 		headers={"Accept": "application/json"},
-		data={"query": "SELECT DISTINCT ?p WHERE { GRAPH ?g { ?p a <http://www.w3.org/2002/07/owl#TransitiveProperty> } }"},
+		data={"query": f"SELECT DISTINCT ?s ?o WHERE {{ GRAPH ?g {{ ?s <{prop}> ?o }} FILTER(?g != <{INFERRED_GRAPH}>) }}"},
+	)
+	resp.raise_for_status()
+	return {(b["s"]["value"], b["o"]["value"]) for b in resp.json()["results"]["bindings"]}
+
+def compute_inferences():
+	"""
+	Computes inferred triples for owl:TransitiveProperty and owl:inverseOf declarations
+	found in the triplestore, then writes them all to urn:lucos:inferred in a single
+	operation.  Direct triples stay in their source named graphs; the union default graph
+	on the arachne endpoint combines both.
+	"""
+	inferred_lines = []
+
+	# ── Transitive closures ──────────────────────────────────────────────────
+	resp = session.post(
+		"http://triplestore:3030/raw_arachne/sparql",
+		headers={"Accept": "application/json"},
+		data={"query": f"SELECT DISTINCT ?p WHERE {{ GRAPH ?g {{ ?p a <{OWL_TRANSITIVE}> }} }}"},
 	)
 	resp.raise_for_status()
 	transitive_props = [b["p"]["value"] for b in resp.json()["results"]["bindings"]]
 
-	if not transitive_props:
-		print("No owl:TransitiveProperty properties found — clearing inferred graph")
-		replace_graph_in_triplestore(INFERRED_GRAPH, "", "text/turtle")
-		return
+	if transitive_props:
+		print(f"Transitive properties ({len(transitive_props)}): {', '.join('<' + p + '>' for p in transitive_props)}")
+		for prop in transitive_props:
+			direct_pairs = _sparql_pairs(prop)
+			# Build adjacency map: node → set of direct successors
+			direct = {}
+			for s, o in direct_pairs:
+				direct.setdefault(s, set()).add(o)
 
-	print(f"Found {len(transitive_props)} transitive propert{'y' if len(transitive_props) == 1 else 'ies'}: {', '.join('<' + p + '>' for p in transitive_props)}")
+			inferred_for_prop = []
+			for start in direct:
+				visited = set()
+				queue = list(direct[start])
+				while queue:
+					node = queue.pop(0)
+					if node in visited:
+						continue
+					visited.add(node)
+					if (start, node) not in direct_pairs:
+						inferred_for_prop.append((start, node))
+					for next_node in direct.get(node, []):
+						if next_node not in visited:
+							queue.append(next_node)
 
-	inferred_lines = []
+			print(f"  <{prop}>: {len(direct_pairs)} direct → {len(inferred_for_prop)} inferred")
+			for s, o in inferred_for_prop:
+				inferred_lines.append(f"<{s}> <{prop}> <{o}> .")
+	else:
+		print("No owl:TransitiveProperty properties found")
 
-	for prop in transitive_props:
-		resp = session.post(
-			"http://triplestore:3030/raw_arachne/sparql",
-			headers={"Accept": "application/json"},
-			data={"query": f"SELECT DISTINCT ?s ?o WHERE {{ GRAPH ?g {{ ?s <{prop}> ?o }} FILTER(?g != <{INFERRED_GRAPH}>) }}"},
-		)
-		resp.raise_for_status()
+	# ── Inverse properties ───────────────────────────────────────────────────
+	resp = session.post(
+		"http://triplestore:3030/raw_arachne/sparql",
+		headers={"Accept": "application/json"},
+		data={"query": f"SELECT DISTINCT ?p1 ?p2 WHERE {{ GRAPH ?g {{ ?p1 <{OWL_INVERSE_OF}> ?p2 }} FILTER(?g != <{INFERRED_GRAPH}>) }}"},
+	)
+	resp.raise_for_status()
 
-		# Build adjacency map: node → set of direct successors
-		direct = {}
-		for b in resp.json()["results"]["bindings"]:
-			s = b["s"]["value"]
-			o = b["o"]["value"]
-			direct.setdefault(s, set()).add(o)
+	# owl:inverseOf is symmetric — deduplicate (P1,P2) / (P2,P1) into a single canonical pair
+	seen = set()
+	inverse_pairs = []
+	for b in resp.json()["results"]["bindings"]:
+		p1, p2 = b["p1"]["value"], b["p2"]["value"]
+		canonical = tuple(sorted([p1, p2]))
+		if canonical not in seen:
+			seen.add(canonical)
+			inverse_pairs.append((p1, p2))
 
-		direct_pairs = {(s, o) for s, objs in direct.items() for o in objs}
-		inferred_for_prop = []
+	if inverse_pairs:
+		print(f"Inverse property pairs ({len(inverse_pairs)}): {', '.join(f'<{a}>/<{b}>' for a, b in inverse_pairs)}")
+		for p1, p2 in inverse_pairs:
+			pairs_p1 = _sparql_pairs(p1)
+			pairs_p2 = _sparql_pairs(p2)
+			# Generate P2 inverses for P1 data, and P1 inverses for P2 data
+			for src_pairs, src_prop, dst_prop, dst_pairs in [
+				(pairs_p1, p1, p2, pairs_p2),
+				(pairs_p2, p2, p1, pairs_p1),
+			]:
+				inferred_for_dir = [(o, s) for s, o in src_pairs if (o, s) not in dst_pairs]
+				print(f"  <{src_prop}> → <{dst_prop}>: {len(src_pairs)} direct → {len(inferred_for_dir)} inferred inverses")
+				for s, o in inferred_for_dir:
+					inferred_lines.append(f"<{s}> <{dst_prop}> <{o}> .")
+	else:
+		print("No owl:inverseOf pairs found")
 
-		for start in direct:
-			visited = set()
-			queue = list(direct.get(start, []))
-			while queue:
-				node = queue.pop(0)
-				if node in visited:
-					continue
-				visited.add(node)
-				if (start, node) not in direct_pairs:
-					inferred_for_prop.append((start, node))
-				for next_node in direct.get(node, []):
-					if next_node not in visited:
-						queue.append(next_node)
-
-		print(f"  <{prop}>: {len(direct_pairs)} direct pairs → {len(inferred_for_prop)} inferred")
-		for s, o in inferred_for_prop:
-			inferred_lines.append(f"<{s}> <{prop}> <{o}> .")
-
+	# ── Write inferred graph ─────────────────────────────────────────────────
 	turtle_content = "\n".join(inferred_lines)
-	print(f"Writing {len(inferred_lines)} inferred triple{'s' if len(inferred_lines) != 1 else ''} to <{INFERRED_GRAPH}>")
+	print(f"Writing {len(inferred_lines)} total inferred triple{'s' if len(inferred_lines) != 1 else ''} to <{INFERRED_GRAPH}>")
 	replace_graph_in_triplestore(INFERRED_GRAPH, turtle_content, "text/turtle")
 
 
