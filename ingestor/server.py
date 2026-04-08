@@ -2,7 +2,7 @@
 import json, sys, os, traceback
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from authorised_fetch import fetch_url
-from triplestore import systems_to_graphs, replace_item_in_triplestore, delete_item_in_triplestore
+from triplestore import live_systems, replace_item_in_triplestore, delete_item_in_triplestore
 from searchindex import update_searchindex, delete_doc_in_searchindex
 
 if not os.environ.get("PORT"):
@@ -34,14 +34,14 @@ class WebhookHandler(BaseHTTPRequestHandler):
 		try:
 			if event["type"].endswith("Created") or event["type"].endswith("Added") or event["type"].endswith("Updated"):
 				(content, content_type) = fetch_url(event["source"], event["url"])
-				replace_item_in_triplestore(event["url"], systems_to_graphs[event["source"]], content, content_type)
+				replace_item_in_triplestore(event["url"], live_systems[event["source"]], content, content_type)
 				update_searchindex(event["source"], content, content_type)
 				self.send_response(200, "OK")
 				self.send_header("Content-type", "text/plain")
 				self.end_headers()
 				self.wfile.write(bytes("Updated", "utf-8"))
 			elif event["type"].endswith("Deleted"):
-				delete_item_in_triplestore(event["url"], systems_to_graphs[event["source"]])
+				delete_item_in_triplestore(event["url"], live_systems[event["source"]])
 				delete_doc_in_searchindex(event["source"], event["url"])
 				self.send_response(200, "OK")
 				self.send_header("Content-type", "text/plain")
