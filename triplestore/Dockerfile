@@ -1,23 +1,24 @@
 FROM openjdk:22-jdk-slim
 
-# Install Fuseki from source
-RUN apt-get update && apt-get install -y wget gettext-base
+RUN apt-get update && apt-get install -y maven gettext-base
+
 ENV FUSEKI_HOME=/fuseki
-ENV FUSEKI_VERSION=5.6.0
-RUN wget https://archive.apache.org/dist/jena/binaries/apache-jena-fuseki-${FUSEKI_VERSION}.tar.gz && \
-    tar -xzf apache-jena-fuseki-${FUSEKI_VERSION}.tar.gz && \
-    mv apache-jena-fuseki-${FUSEKI_VERSION} ${FUSEKI_HOME} && \
-    rm apache-jena-fuseki-${FUSEKI_VERSION}.tar.gz
-
 WORKDIR $FUSEKI_HOME
-ENV PATH=$PATH:$FUSEKI_HOME
 
-COPY startup.sh .
+COPY pom.xml .
+RUN mvn -q dependency:copy-dependencies \
+    -DoutputDirectory=${FUSEKI_HOME} \
+    -DincludeArtifactIds=jena-fuseki-server \
+    -DexcludeTransitive=true \
+    -Dmdep.stripVersion=true && \
+    rm -rf ~/.m2
+
 RUN mkdir -p run
 COPY configuration ${FUSEKI_HOME}/run/configuration
 COPY shiro.ini.template .
 
+COPY startup.sh .
+
 EXPOSE 3030
 
-# Start the Fuseki server
 CMD ["./startup.sh"]
