@@ -1,6 +1,6 @@
 FROM openjdk:22-jdk-slim
 
-RUN apt-get update && apt-get install -y maven gettext-base
+RUN apt-get update && apt-get install -y maven gettext-base curl
 
 ENV FUSEKI_HOME=/fuseki
 WORKDIR $FUSEKI_HOME
