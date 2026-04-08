@@ -40,6 +40,7 @@ services:
       resources:
         limits:
           memory: 2G
+    restart: always
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3030/$/ping"]
       interval: 10s
@@ -62,9 +63,10 @@ services:
       - APP_ORIGIN
     depends_on:
       triplestore:
-        condition: service_started
+        condition: service_healthy
       search:
         condition: service_healthy
+    restart: always
     healthcheck:
       test: ["CMD", "python3", "-c", "import socket; s=socket.socket(); s.settimeout(5); s.connect(('127.0.0.1', 8099)); s.close()"]
       interval: 10s
@@ -95,6 +97,7 @@ services:
       - PORT=8108
     volumes:
       - typesense_data:/data
+    restart: always
     healthcheck:
       test: ["CMD", "curl", "--silent", "--fail", "http://127.0.0.1:8108/health"]
       interval: 10s
