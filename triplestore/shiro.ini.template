@@ -1,5 +1,6 @@
 [main]
 ssl.enabled = false
+statelessSessionManager = org.apache.shiro.web.session.mgt.DefaultWebSessionManager
 
 [users]
 ${USERS}
