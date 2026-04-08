@@ -5,6 +5,7 @@ Exposes the lucos_arachne knowledge graph via the Model Context Protocol.
 """
 
 import os
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Optional
 
@@ -593,10 +594,22 @@ async def info(request):
     })
 
 
-app = Starlette(routes=[
-    Route("/_info", info),
-    Mount("/", app=mcp.streamable_http_app()),
-])
+mcp_asgi_app = mcp.streamable_http_app()
+
+
+@asynccontextmanager
+async def lifespan(app):
+    async with mcp_asgi_app.router.lifespan_context(app):
+        yield
+
+
+app = Starlette(
+    routes=[
+        Route("/_info", info),
+        Mount("/", app=mcp_asgi_app),
+    ],
+    lifespan=lifespan,
+)
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=PORT)
