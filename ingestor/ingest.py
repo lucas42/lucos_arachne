@@ -44,5 +44,5 @@ if __name__ == "__main__":
 		updateScheduleTracker(success=True)
 	except Exception as e:
 		error_message = f"Ingest failed: {e}"
-		updateScheduleTracker(success=True, message=error_message)
+		updateScheduleTracker(success=False, message=error_message)
 		sys.exit(error_message)
