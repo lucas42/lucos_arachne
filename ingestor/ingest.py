@@ -31,18 +31,22 @@ if __name__ == "__main__":
 		all_item_ids = set()
 		all_track_ids = set()
 		for system, url in systems_to_graphs.items():
-			(content, content_type) = fetch_url(system, url)
-			replace_graph_in_triplestore(url, content, content_type)
-			(item_ids, track_ids) = update_searchindex(system, content, content_type)
-			all_item_ids |= item_ids
-			all_track_ids |= track_ids
+			tracker_system = f"lucos_arachne_ingestor_{system}"
+			try:
+				(content, content_type) = fetch_url(system, url)
+				replace_graph_in_triplestore(url, content, content_type)
+				(item_ids, track_ids) = update_searchindex(system, content, content_type)
+				all_item_ids |= item_ids
+				all_track_ids |= track_ids
+				updateScheduleTracker(success=True, system=tracker_system)
+			except Exception as e:
+				error_message = f"Ingest of {system} failed: {e}"
+				print(error_message, flush=True)
+				updateScheduleTracker(success=False, system=tracker_system, message=error_message)
 		cleanup_triplestore(systems_to_graphs.values())
 		cleanup_searchindex(all_item_ids, all_track_ids)
 
 		updateLoganne(type="knowledgeIngest", humanReadable="Data ingested into knowledge graph", url=BASE_URL)
-
-		updateScheduleTracker(success=True)
 	except Exception as e:
 		error_message = f"Ingest failed: {e}"
-		updateScheduleTracker(success=False, message=error_message)
 		sys.exit(error_message)
