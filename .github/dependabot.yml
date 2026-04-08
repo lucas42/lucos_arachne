@@ -21,6 +21,13 @@ updates:
       time: '07:00'
     allow:
       - dependency-type: all
+  - package-ecosystem: maven
+    directory: /triplestore
+    schedule:
+      interval: daily
+      time: '07:00'
+    allow:
+      - dependency-type: all
   - package-ecosystem: docker
     directory: /search
     schedule:

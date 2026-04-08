@@ -2,4 +2,4 @@
 
 set -e
 USERS=`echo $CLIENT_KEYS | sed -e "s/:[^=]*=/=/g" | sed -e "s/;/\n/g"` envsubst < shiro.ini.template > run/shiro.ini
-fuseki-server --timeout=30000
+java $JVM_ARGS -jar jena-fuseki-server.jar --timeout=30000
