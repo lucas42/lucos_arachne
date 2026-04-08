@@ -6,21 +6,29 @@ KEY_LUCOS_ARACHNE = os.environ.get("KEY_LUCOS_ARACHNE")
 if not KEY_LUCOS_ARACHNE:
 	sys.exit("No KEY_LUCOS_ARACHNE environment variable found — won't be able to authenticate against triplestore endpoint")
 
-systems_to_graphs = {
+# Live lucos systems: name → fetch URL (also used as graph URI in the triplestore)
+live_systems = {
 	"lucos_eolas": "https://eolas.l42.eu/metadata/all/data/",
 	"lucos_contacts": "https://contacts.l42.eu/people/all",
 	"lucos_media_metadata_api": "https://media-api.l42.eu/v2/export",
-	"foaf": "https://www.w3.org/archive/xmlns.com/foaf/0.1/ontology", # Canonically http://xmlns.com/foaf/spec/ — but it stopped working in November 2025, so have switched to w3's archive version
-	"time": "https://www.w3.org/2006/time",
-	"dbpedia_meanOfTransportation": "https://dbpedia.org/ontology/MeanOfTransportation",
-	"skos": "http://www.w3.org/2004/02/skos/core",
-	"owl": "https://www.w3.org/2002/07/owl",
-	"dc": "http://purl.org/dc/terms/",
-	"dcam": "http://purl.org/dc/dcam/",
-	"rdf": "http://www.w3.org/1999/02/22-rdf-syntax-ns",
-	"rdfs": "http://www.w3.org/2000/01/rdf-schema",
-	"loc_iso639-5": "http://id.loc.gov/vocabulary/iso639-5/iso639-5_Language",
-	"loc_mads": "https://id.loc.gov/ontologies/madsrdf/v1.rdf", # Canonically http://www.loc.gov/mads/rdf/v1 - but that's a redirect chain which started returning a 403 in December 2025
+}
+
+# 3rd party ontologies: name → (graph_uri, local_filename, content_type)
+# Files are cached in ingestor/ontologies/ to avoid relying on external URLs being available.
+# (FOAF stopped working Nov 2025, MADS returned 403 Dec 2025, W3C Time had connection resets Mar 2026)
+ONTOLOGIES_DIR = os.path.join(os.path.dirname(__file__), "ontologies")
+ontology_cache = {
+	"foaf": ("https://www.w3.org/archive/xmlns.com/foaf/0.1/ontology", "foaf.rdf", "application/rdf+xml"),
+	"time": ("https://www.w3.org/2006/time", "time.ttl", "text/turtle"),
+	"dbpedia_meanOfTransportation": ("https://dbpedia.org/ontology/MeanOfTransportation", "dbpedia_meanOfTransportation.ttl", "text/turtle"),
+	"skos": ("http://www.w3.org/2004/02/skos/core", "skos.rdf", "application/rdf+xml"),
+	"owl": ("https://www.w3.org/2002/07/owl", "owl.ttl", "text/turtle"),
+	"dc": ("http://purl.org/dc/terms/", "dc.ttl", "text/turtle"),
+	"dcam": ("http://purl.org/dc/dcam/", "dcam.ttl", "text/turtle"),
+	"rdf": ("http://www.w3.org/1999/02/22-rdf-syntax-ns", "rdf.ttl", "text/turtle"),
+	"rdfs": ("http://www.w3.org/2000/01/rdf-schema", "rdfs.ttl", "text/turtle"),
+	"loc_iso639-5": ("http://id.loc.gov/vocabulary/iso639-5/iso639-5_Language", "loc_iso639-5.rdf", "application/rdf+xml"),
+	"loc_mads": ("https://id.loc.gov/ontologies/madsrdf/v1.rdf", "loc_mads.rdf", "application/rdf+xml"),
 }
 
 session = requests.Session()
