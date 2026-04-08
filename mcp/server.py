@@ -8,10 +8,12 @@ import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Optional
+from urllib.parse import urlparse
 
 import requests
 import uvicorn
 from mcp.server.fastmcp import FastMCP
+from mcp.server.transport_security import TransportSecuritySettings
 from starlette.applications import Starlette
 from starlette.responses import JSONResponse
 from starlette.routing import Mount, Route
@@ -48,6 +50,15 @@ TYPESENSE_API_KEY = os.environ.get("KEY_LUCOS_ARACHNE", "")
 TRIPLESTORE_SPARQL_URL = "http://triplestore:3030/arachne/sparql"
 TRIPLESTORE_AUTH = ("admin", os.environ.get("KEY_LUCOS_ARACHNE", ""))
 
+# FastMCP's DNS rebinding protection defaults to localhost-only allowed hosts.
+# Add the service's public hostname so external clients can reach /mcp.
+_allowed_hosts = ["127.0.0.1:*", "localhost:*", "[::1]:*"]
+_app_origin = os.environ.get("APP_ORIGIN", "")
+if _app_origin:
+    _hostname = urlparse(_app_origin).hostname
+    if _hostname:
+        _allowed_hosts.append(_hostname)
+
 mcp = FastMCP(
     name="lucos_arachne",
     instructions=(
@@ -57,6 +68,10 @@ mcp = FastMCP(
         "types, and relationships in the knowledge graph."
     ),
     stateless_http=True,
+    transport_security=TransportSecuritySettings(
+        enable_dns_rebinding_protection=True,
+        allowed_hosts=_allowed_hosts,
+    ),
 )
 
 
