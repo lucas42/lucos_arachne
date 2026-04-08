@@ -60,7 +60,7 @@ if __name__ == "__main__":
 			compute_inferences()
 			updateScheduleTracker(success=True, system=tracker_system)
 		except Exception as e:
-			error_message = f"Transitive closure computation failed: {e}"
+			error_message = f"Inference computation failed: {e}"
 			print(error_message, flush=True)
 			updateScheduleTracker(success=False, system=tracker_system, message=error_message)
 		all_graph_uris = list(live_systems.values()) + [graph_uri for graph_uri, _, _ in ontology_cache.values()] + [INFERRED_GRAPH]
