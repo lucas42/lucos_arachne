@@ -4,7 +4,7 @@ Bulk ingests RDF from other systems and adds data to the triplestore and searchi
 """
 import sys, os, time, random
 from authorised_fetch import fetch_url
-from triplestore import systems_to_graphs, replace_graph_in_triplestore, cleanup_triplestore
+from triplestore import live_systems, ontology_cache, ONTOLOGIES_DIR, replace_graph_in_triplestore, cleanup_triplestore
 from searchindex import update_searchindex, cleanup_searchindex
 from loganne import updateLoganne
 from schedule_tracker import updateScheduleTracker
@@ -30,7 +30,7 @@ if __name__ == "__main__":
 	try:
 		all_item_ids = set()
 		all_track_ids = set()
-		for system, url in systems_to_graphs.items():
+		for system, url in live_systems.items():
 			tracker_system = f"lucos_arachne_ingestor_{system}"
 			try:
 				(content, content_type) = fetch_url(system, url)
@@ -43,7 +43,20 @@ if __name__ == "__main__":
 				error_message = f"Ingest of {system} failed: {e}"
 				print(error_message, flush=True)
 				updateScheduleTracker(success=False, system=tracker_system, message=error_message)
-		cleanup_triplestore(systems_to_graphs.values())
+		for system, (graph_uri, local_file, content_type) in ontology_cache.items():
+			tracker_system = f"lucos_arachne_ingestor_{system}"
+			try:
+				file_path = os.path.join(ONTOLOGIES_DIR, local_file)
+				with open(file_path, "r", encoding="utf-8") as f:
+					content = f.read()
+				replace_graph_in_triplestore(graph_uri, content, content_type)
+				updateScheduleTracker(success=True, system=tracker_system)
+			except Exception as e:
+				error_message = f"Ingest of {system} failed: {e}"
+				print(error_message, flush=True)
+				updateScheduleTracker(success=False, system=tracker_system, message=error_message)
+		all_graph_uris = list(live_systems.values()) + [graph_uri for graph_uri, _, _ in ontology_cache.values()]
+		cleanup_triplestore(all_graph_uris)
 		cleanup_searchindex(all_item_ids, all_track_ids)
 
 		updateLoganne(type="knowledgeIngest", humanReadable="Data ingested into knowledge graph", url=BASE_URL)
