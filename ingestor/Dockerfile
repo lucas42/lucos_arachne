@@ -8,5 +8,6 @@ COPY Pipfile* ./
 RUN pipenv install
 
 COPY *.py .
+COPY ontologies/ ontologies/
 
 CMD [ "./startup.sh"]
