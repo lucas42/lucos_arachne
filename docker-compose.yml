@@ -42,7 +42,7 @@ services:
           memory: 1G
     restart: always
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3030/$/ping"]
+      test: ["CMD", "curl", "--fail", "-s", "-o", "/dev/null", "http://127.0.0.1:3030/$/ping"]
       interval: 10s
       timeout: 5s
       retries: 3
