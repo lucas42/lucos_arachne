@@ -3,7 +3,7 @@ FROM openjdk:22-jdk-slim
 # Install Fuseki from source
 RUN apt-get update && apt-get install -y wget gettext-base
 ENV FUSEKI_HOME=/fuseki
-ENV FUSEKI_VERSION=5.5.0
+ENV FUSEKI_VERSION=5.6.0
 RUN wget https://archive.apache.org/dist/jena/binaries/apache-jena-fuseki-${FUSEKI_VERSION}.tar.gz && \
     tar -xzf apache-jena-fuseki-${FUSEKI_VERSION}.tar.gz && \
     mv apache-jena-fuseki-${FUSEKI_VERSION} ${FUSEKI_HOME} && \
