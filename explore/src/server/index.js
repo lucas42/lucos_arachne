@@ -63,6 +63,7 @@ function checkIngestor() {
 }
 
 
+app.set('trust proxy', 1);
 app.use(rateLimit({ windowMs: 15 * 60 * 1000, limit: 100 }));
 app.use((req, res, next) => app.auth(req, res, next));
 
