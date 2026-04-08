@@ -113,6 +113,7 @@ services:
       - PORT=8200
       - KEY_LUCOS_ARACHNE
       - TYPESENSE_ADMIN_KEY
+      - APP_ORIGIN
     depends_on:
       triplestore:
         condition: service_healthy
