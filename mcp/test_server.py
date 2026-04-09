@@ -414,6 +414,122 @@ def test_find_entities_property_not_found():
     assert "nonExistentProp" in result
 
 
+def test_find_entities_with_uri_filter():
+    """find_entities with a URI filter adds a triple pattern to the inner subquery."""
+    type_response = _sparql_response([
+        {"type": _uri_binding("https://schema.org/State")},
+    ])
+    prop_response = _sparql_response([
+        {"prop": _uri_binding("https://schema.org/containedIn")},
+    ])
+    entity_response = _sparql_response(_make_entity_bindings([
+        {"s": "https://arachne.l42.eu/state/1", "label": "California"},
+    ]))
+
+    with patch("server.requests.get", side_effect=[type_response, prop_response, entity_response]) as mock_get:
+        result = server.find_entities(
+            type="State",
+            filters=[{"property": "containedIn", "value": "https://example.org/usa"}],
+        )
+
+    assert "California" in result
+    # Filter constraint should appear in the SPARQL query
+    entity_call = mock_get.call_args_list[2]
+    query_param = entity_call[1]["params"]["query"]
+    assert "<https://example.org/usa>" in query_param
+    assert "containedIn" in query_param or "schema.org/containedIn" in query_param
+
+
+def test_find_entities_with_literal_filter():
+    """find_entities with a literal filter value wraps it in quotes."""
+    type_response = _sparql_response([
+        {"type": _uri_binding("https://schema.org/Person")},
+    ])
+    prop_response = _sparql_response([
+        {"prop": _uri_binding("https://schema.org/nationality")},
+    ])
+    entity_response = _sparql_response(_make_entity_bindings([
+        {"s": "https://arachne.l42.eu/person/1", "label": "Alice"},
+    ]))
+
+    with patch("server.requests.get", side_effect=[type_response, prop_response, entity_response]) as mock_get:
+        result = server.find_entities(
+            type="Person",
+            filters=[{"property": "nationality", "value": "British"}],
+        )
+
+    assert "Alice" in result
+    entity_call = mock_get.call_args_list[2]
+    query_param = entity_call[1]["params"]["query"]
+    assert '"British"' in query_param
+
+
+def test_find_entities_multiple_filters():
+    """Multiple filters are all included as required triple patterns."""
+    type_response = _sparql_response([
+        {"type": _uri_binding("https://schema.org/Festival")},
+    ])
+    prop1_response = _sparql_response([
+        {"prop": _uri_binding("https://schema.org/containedIn")},
+    ])
+    prop2_response = _sparql_response([
+        {"prop": _uri_binding("https://schema.org/genre")},
+    ])
+    entity_response = _sparql_response(_make_entity_bindings([
+        {"s": "https://arachne.l42.eu/festival/1", "label": "Glastonbury"},
+    ]))
+
+    with patch("server.requests.get", side_effect=[type_response, prop1_response, prop2_response, entity_response]) as mock_get:
+        result = server.find_entities(
+            type="Festival",
+            filters=[
+                {"property": "containedIn", "value": "https://example.org/uk"},
+                {"property": "genre", "value": "Music"},
+            ],
+        )
+
+    assert "Glastonbury" in result
+    entity_call = mock_get.call_args_list[3]
+    query_param = entity_call[1]["params"]["query"]
+    assert "<https://example.org/uk>" in query_param
+    assert '"Music"' in query_param
+
+
+def test_find_entities_filter_property_not_found():
+    """find_entities returns an error when a filter property can't be resolved."""
+    type_response = _sparql_response([
+        {"type": _uri_binding("https://schema.org/Person")},
+    ])
+    prop_response = _sparql_response([])  # property not found
+
+    with patch("server.requests.get", side_effect=[type_response, prop_response]):
+        result = server.find_entities(
+            type="Person",
+            filters=[{"property": "nonExistentProp", "value": "something"}],
+        )
+
+    assert "Could not resolve filter property" in result
+    assert "nonExistentProp" in result
+
+
+def test_find_entities_filter_invalid_uri_value():
+    """find_entities rejects filter values that are invalid URIs."""
+    type_response = _sparql_response([
+        {"type": _uri_binding("https://schema.org/Person")},
+    ])
+    prop_response = _sparql_response([
+        {"prop": _uri_binding("https://schema.org/containedIn")},
+    ])
+
+    with patch("server.requests.get", side_effect=[type_response, prop_response]):
+        result = server.find_entities(
+            type="Person",
+            filters=[{"property": "containedIn", "value": "https://evil.com/>inject"}],
+        )
+
+    assert "Invalid filter value" in result
+
+
 # ---------------------------------------------------------------------------
 # get_entity
 # ---------------------------------------------------------------------------
