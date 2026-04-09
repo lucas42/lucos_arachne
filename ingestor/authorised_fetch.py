@@ -3,7 +3,7 @@ import requests
 
 session = requests.Session()
 session.headers.update({
-	"User-Agent": "lucos_arachne_ingestor",
+	"User-Agent": os.environ.get("SYSTEM", ""),
 	"Accept": "application/rdf+xml, text/turtle, application/ld+json",
 })
 
