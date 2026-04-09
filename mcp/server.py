@@ -15,7 +15,10 @@ import uvicorn
 from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
 from starlette.applications import Starlette
-from starlette.responses import JSONResponse
+from starlette.middleware import Middleware
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.requests import Request
+from starlette.responses import JSONResponse, Response
 from starlette.routing import Mount, Route
 
 RESOURCES_DIR = Path(__file__).parent / "resources"
@@ -599,6 +602,35 @@ def get_data_sources() -> str:
     return "\n".join(lines)
 
 
+def _parse_valid_keys() -> set:
+    """Parse CLIENT_KEYS env var and return the set of valid token values.
+
+    CLIENT_KEYS format: semicolon-separated 'system:env=token' pairs.
+    Returns an empty set if CLIENT_KEYS is unset or empty.
+    """
+    client_keys_str = os.environ.get("CLIENT_KEYS", "")
+    return {entry.split("=", 1)[1] for entry in client_keys_str.split(";") if "=" in entry}
+
+
+class BearerAuthMiddleware(BaseHTTPMiddleware):
+    """Validate Authorization: Bearer <token> on all routes except /_info."""
+
+    async def dispatch(self, request: Request, call_next):
+        if request.url.path == "/_info":
+            return await call_next(request)
+        auth = request.headers.get("Authorization", "")
+        if auth.startswith("Bearer "):
+            token = auth[len("Bearer "):]
+            if token in _parse_valid_keys():
+                return await call_next(request)
+        return Response(
+            content="Unauthorized",
+            status_code=401,
+            headers={"WWW-Authenticate": "Bearer"},
+            media_type="text/plain",
+        )
+
+
 async def info(request):
     return JSONResponse({
         "system": os.environ.get("SYSTEM", "lucos_arachne"),
@@ -624,6 +656,9 @@ app = Starlette(
         Mount("/", app=mcp_asgi_app),
     ],
     lifespan=lifespan,
+    middleware=[
+        Middleware(BearerAuthMiddleware),
+    ],
 )
 
 if __name__ == "__main__":
