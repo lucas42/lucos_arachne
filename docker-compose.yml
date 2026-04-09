@@ -114,6 +114,7 @@ services:
       - KEY_LUCOS_ARACHNE
       - TYPESENSE_ADMIN_KEY
       - APP_ORIGIN
+      - CLIENT_KEYS
     depends_on:
       triplestore:
         condition: service_healthy
