@@ -12,6 +12,30 @@ try:
 except ValueError:
 	sys.exit("\033[91mPORT isn't an integer\033[0m")
 
+def _get_valid_keys():
+	"""Parse CLIENT_KEYS env var (semicolon-separated name=value pairs) into a set of valid tokens."""
+	client_keys_str = os.environ.get("CLIENT_KEYS", "")
+	if not client_keys_str:
+		return set()
+	return {pair.split("=", 1)[1] for pair in client_keys_str.split(";") if "=" in pair}
+
+def is_authorised(headers):
+	"""Return True if the request has a valid Bearer token, or if CLIENT_KEYS is not configured.
+
+	During the Phase 1 migration window, requests without an Authorization header are also
+	accepted to maintain backwards compatibility before Loganne starts sending tokens.
+	"""
+	valid_keys = _get_valid_keys()
+	if not valid_keys:
+		return True
+	auth_header = headers.get("Authorization", "")
+	if not auth_header:
+		return True  # Accept unauthenticated during Phase 1 migration
+	if not auth_header.startswith("Bearer "):
+		return False
+	token = auth_header[len("Bearer "):]
+	return token in valid_keys
+
 class WebhookHandler(BaseHTTPRequestHandler):
 	def do_GET(self):
 		self.send_error(404, "Page Not Found")
@@ -26,6 +50,13 @@ class WebhookHandler(BaseHTTPRequestHandler):
 		self.wfile.flush()
 		self.connection.close()
 	def webhookController(self):
+		if not is_authorised(self.headers):
+			self.send_response(401, "Unauthorized")
+			self.send_header("Content-type", "text/plain")
+			self.send_header("WWW-Authenticate", "Bearer")
+			self.end_headers()
+			self.wfile.write(b"Invalid API Key")
+			return
 		try:
 			event = json.loads(self.post_data)
 		except json.decoder.JSONDecodeError as error:
