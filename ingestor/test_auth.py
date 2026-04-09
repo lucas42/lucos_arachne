@@ -1,4 +1,4 @@
-"""Unit tests for is_authorised() and _get_valid_keys() — Phase 1: missing header must return True."""
+"""Unit tests for is_authorised() and _get_valid_keys() — Phase 3: missing header must return False."""
 import os
 import sys
 import types
@@ -49,7 +49,7 @@ def test_get_valid_keys_multiple_pairs():
 	assert _get_valid_keys() == {"tokenA", "tokenB"}
 
 
-# is_authorised tests (Phase 1 behaviour)
+# is_authorised tests (Phase 3 behaviour)
 def test_no_client_keys_accepts():
 	os.environ.pop("CLIENT_KEYS", None)
 	assert is_authorised({}) is True
@@ -60,9 +60,9 @@ def test_valid_token_accepted():
 	assert is_authorised({"Authorization": "Bearer mysecrettoken"}) is True
 
 
-def test_missing_header_accepted_during_phase1():
+def test_missing_header_rejected():
 	os.environ["CLIENT_KEYS"] = "svc=mysecrettoken"
-	assert is_authorised({}) is True
+	assert is_authorised({}) is False
 
 
 def test_invalid_token_rejected():
