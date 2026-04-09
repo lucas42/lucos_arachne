@@ -308,7 +308,7 @@ def test_find_entities_no_results():
 
 
 def test_find_entities_limit():
-    """find_entities passes the limit to SPARQL."""
+    """find_entities passes the limit to the inner subquery in SPARQL."""
     type_response = _sparql_response([
         {"type": _uri_binding("https://schema.org/Person")},
     ])
@@ -322,7 +322,51 @@ def test_find_entities_limit():
     # The entity query call is the second one
     entity_call = mock_get.call_args_list[1]
     query_param = entity_call[1]["params"]["query"]
+    # LIMIT is applied in the inner subquery, not at the top level
     assert "LIMIT 5" in query_param
+    # The outer query must not have its own LIMIT (which would re-limit expanded rows)
+    assert query_param.count("LIMIT 5") == 1
+
+
+def test_find_entities_limit_governs_entity_count_not_rows():
+    """When properties have multiple values, limit controls entities not rows."""
+    type_response = _sparql_response([
+        {"type": _uri_binding("https://schema.org/MusicGroup")},
+    ])
+    prop_response = _sparql_response([
+        {"prop": _uri_binding("https://schema.org/member")},
+    ])
+    # SPARQL returns 2 rows per entity (2 members each), but limit=2 means 2 entities
+    entity_bindings = _sparql_response([
+        {
+            "s": _uri_binding("https://arachne.l42.eu/band/1"),
+            "label": _literal("The Beatles"),
+            "val0": _literal("John"),
+        },
+        {
+            "s": _uri_binding("https://arachne.l42.eu/band/1"),
+            "label": _literal("The Beatles"),
+            "val0": _literal("Paul"),
+        },
+        {
+            "s": _uri_binding("https://arachne.l42.eu/band/2"),
+            "label": _literal("Led Zeppelin"),
+            "val0": _literal("Robert Plant"),
+        },
+        {
+            "s": _uri_binding("https://arachne.l42.eu/band/2"),
+            "label": _literal("Led Zeppelin"),
+            "val0": _literal("Jimmy Page"),
+        },
+    ])
+
+    with patch("server.requests.get", side_effect=[type_response, prop_response, entity_bindings]):
+        result = server.find_entities(type="MusicGroup", properties=["member"], limit=2)
+
+    # Both entities should be present — 4 SPARQL rows represent exactly 2 entities
+    assert "The Beatles" in result
+    assert "Led Zeppelin" in result
+    assert result.startswith("Found 2")
 
 
 def test_find_entities_deduplicates_multi_value_properties():

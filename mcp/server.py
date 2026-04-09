@@ -442,7 +442,12 @@ def find_entities(
     PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
 
     SELECT {select_vars} WHERE {{
-        ?s a <{type_uri}> .
+        {{
+            SELECT DISTINCT ?s WHERE {{
+                ?s a <{type_uri}> .
+            }}
+            LIMIT {limit}
+        }}
         OPTIONAL {{
             {{ ?s skos:prefLabel ?label }}
             UNION
@@ -450,7 +455,6 @@ def find_entities(
         }}{optional_clauses}
     }}
     ORDER BY ?label ?s
-    LIMIT {limit}
     """
 
     response = requests.get(
