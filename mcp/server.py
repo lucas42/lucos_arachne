@@ -446,9 +446,11 @@ def find_entities(
     type: str,
     limit: int = 20,
     properties: Optional[list[str]] = None,
+    filters: Optional[list[dict]] = None,
 ) -> str:
     """
-    Find entities of a given type in the knowledge graph, with optional property values.
+    Find entities of a given type in the knowledge graph, with optional property values
+    and filters.
 
     Returns a list of matching entities with their URI, label, and any requested
     property values.
@@ -460,6 +462,12 @@ def find_entities(
         properties: Optional list of property names or URIs to include in results
                     (e.g. ["birthday", "foaf:name"]). If omitted, only the label
                     and URI are returned.
+        filters: Optional list of {"property": ..., "value": ...} dicts to constrain
+                 results. Property names are resolved the same way as the `properties`
+                 parameter. Values that look like URIs (start with http/https) are
+                 treated as URI values; everything else is treated as a string literal.
+                 Multiple filters are AND-ed together.
+                 Example: [{"property": "containedIn", "value": "https://example.org/usa"}]
     """
     # Resolve the type to a URI
     type_uri, type_err = _resolve_type_uri(type)
@@ -474,6 +482,30 @@ def find_entities(
             if prop_err:
                 return f"Could not resolve property '{prop_name}': {prop_err}"
             resolved_props.append((prop_name, prop_uri))
+
+    # Resolve and validate filters
+    filter_clauses = ""
+    if filters:
+        for f in filters:
+            filter_prop = f.get("property", "")
+            filter_value = f.get("value", "")
+
+            filter_prop_uri, filter_prop_err = _resolve_property_uri(filter_prop)
+            if filter_prop_err:
+                return f"Could not resolve filter property '{filter_prop}': {filter_prop_err}"
+
+            if _is_uri(filter_value):
+                err = _validate_uri_for_sparql(filter_value)
+                if err:
+                    return f"Invalid filter value: {err}"
+                sparql_value = f"<{filter_value}>"
+            else:
+                err = _validate_label_for_sparql(filter_value)
+                if err:
+                    return f"Invalid filter value: {err}"
+                sparql_value = f'"{filter_value}"'
+
+            filter_clauses += f"\n                ?s <{filter_prop_uri}> {sparql_value} ."
 
     # Build the SPARQL query
     optional_clauses = ""
@@ -490,7 +522,7 @@ def find_entities(
     SELECT {select_vars} WHERE {{
         {{
             SELECT DISTINCT ?s WHERE {{
-                ?s a <{type_uri}> .
+                ?s a <{type_uri}> .{filter_clauses}
             }}
             LIMIT {limit}
         }}
