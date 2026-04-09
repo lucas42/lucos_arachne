@@ -48,7 +48,7 @@ TYPESENSE_URL = "http://search:8108"
 TYPESENSE_API_KEY = os.environ.get("KEY_LUCOS_ARACHNE", "")
 
 TRIPLESTORE_SPARQL_URL = "http://triplestore:3030/arachne/sparql"
-TRIPLESTORE_AUTH = ("admin", os.environ.get("KEY_LUCOS_ARACHNE", ""))
+TRIPLESTORE_AUTH = ("lucos_arachne", os.environ.get("KEY_LUCOS_ARACHNE", ""))
 
 # FastMCP's DNS rebinding protection defaults to localhost-only allowed hosts.
 # Add the service's public hostname so external clients can reach /mcp.
