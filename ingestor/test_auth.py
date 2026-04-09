@@ -18,7 +18,12 @@ for mod_name in ("authorised_fetch", "triplestore", "searchindex"):
 
 os.environ.setdefault("PORT", "8080")
 
+_stub_mod_names = list(("authorised_fetch", "triplestore", "searchindex"))
 from server import _get_valid_keys, is_authorised
+
+# Remove stubs so real modules are available for other test files in the session
+for _mod_name in _stub_mod_names:
+	sys.modules.pop(_mod_name, None)
 
 
 @pytest.fixture(autouse=True)
