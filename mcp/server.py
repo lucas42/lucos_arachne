@@ -143,6 +143,24 @@ def shorten_uri(uri: str) -> str:
     return uri
 
 
+def _format_sparql_object(obj: dict) -> str:
+    """Format a SPARQL result binding object (uri or literal) as a display string."""
+    if obj["type"] == "uri":
+        return f"<{shorten_uri(obj['value'])}>"
+    elif obj["type"] == "literal":
+        lang = obj.get("xml:lang")
+        datatype = obj.get("datatype")
+        raw = obj["value"]
+        if lang:
+            return f'"{raw}"@{lang}'
+        elif datatype:
+            return f'"{raw}"^^{shorten_uri(datatype)}'
+        else:
+            return f'"{raw}"'
+    else:
+        return obj["value"]
+
+
 @mcp.tool()
 def get_entity(uri: str) -> str:
     """
@@ -151,6 +169,7 @@ def get_entity(uri: str) -> str:
     Queries the triplestore reasoning endpoint (which includes inferred triples)
     for all triples where the given URI is the subject. Properties are shown with
     human-readable prefixed names where possible (e.g. foaf:name, skos:prefLabel).
+    Blank node property values are resolved one level deep and displayed inline.
 
     Args:
         uri: The full URI of the entity to retrieve (e.g. https://arachne.l42.eu/track/123).
@@ -159,10 +178,14 @@ def get_entity(uri: str) -> str:
         return f"Invalid URI: <{uri}> contains characters not permitted in a SPARQL IRI."
 
     query = f"""
-    SELECT ?p ?o WHERE {{
+    SELECT ?p ?o ?bp ?bo WHERE {{
         <{uri}> ?p ?o .
+        OPTIONAL {{
+            FILTER(isBlank(?o))
+            ?o ?bp ?bo .
+        }}
     }}
-    ORDER BY ?p ?o
+    ORDER BY ?p ?o ?bp
     """
 
     response = requests.get(
@@ -178,38 +201,61 @@ def get_entity(uri: str) -> str:
     if not bindings:
         return f"No properties found for entity <{uri}>. The URI may not exist in the triplestore."
 
-    # Group values by property
-    properties: dict[str, list[str]] = {}
+    # Group values by property.
+    # Values are either strings (uri/literal) or dicts (blank nodes with sub-properties).
+    properties: dict[str, list] = {}
+    bnode_sub_props: dict[str, dict[str, list[str]]] = {}  # bnode_id -> sub_prop -> [values]
+
     for binding in bindings:
         prop_uri = binding["p"]["value"]
         prop_label = shorten_uri(prop_uri)
 
         obj = binding["o"]
-        if obj["type"] == "uri":
-            value = f"<{shorten_uri(obj['value'])}>"
-        elif obj["type"] == "literal":
-            lang = obj.get("xml:lang")
-            datatype = obj.get("datatype")
-            raw = obj["value"]
-            if lang:
-                value = f'"{raw}"@{lang}'
-            elif datatype:
-                value = f'"{raw}"^^{shorten_uri(datatype)}'
-            else:
-                value = f'"{raw}"'
-        else:
-            value = obj["value"]
+        if obj["type"] == "bnode":
+            bnode_id = obj["value"]
+            if bnode_id not in bnode_sub_props:
+                # First occurrence — create a dict to hold sub-properties and add it to
+                # the property list. The same dict object is mutated as further rows arrive.
+                bnode_dict: dict[str, list[str]] = {}
+                bnode_sub_props[bnode_id] = bnode_dict
+                properties.setdefault(prop_label, []).append(bnode_dict)
 
-        properties.setdefault(prop_label, []).append(value)
+            if "bp" in binding and "bo" in binding:
+                sub_prop_label = shorten_uri(binding["bp"]["value"])
+                sub_value = _format_sparql_object(binding["bo"])
+                bnode_sub_props[bnode_id].setdefault(sub_prop_label, []).append(sub_value)
+        else:
+            properties.setdefault(prop_label, []).append(_format_sparql_object(obj))
 
     lines = [f"Entity: <{uri}>\n"]
     for prop, values in sorted(properties.items()):
         if len(values) == 1:
-            lines.append(f"  {prop}: {values[0]}")
+            val = values[0]
+            if isinstance(val, dict):
+                lines.append(f"  {prop}:")
+                for sub_prop, sub_vals in sorted(val.items()):
+                    if len(sub_vals) == 1:
+                        lines.append(f"    {sub_prop}: {sub_vals[0]}")
+                    else:
+                        lines.append(f"    {sub_prop}:")
+                        for sv in sub_vals:
+                            lines.append(f"      - {sv}")
+            else:
+                lines.append(f"  {prop}: {val}")
         else:
             lines.append(f"  {prop}:")
-            for v in values:
-                lines.append(f"    - {v}")
+            for val in values:
+                if isinstance(val, dict):
+                    lines.append(f"    -")
+                    for sub_prop, sub_vals in sorted(val.items()):
+                        if len(sub_vals) == 1:
+                            lines.append(f"      {sub_prop}: {sub_vals[0]}")
+                        else:
+                            lines.append(f"      {sub_prop}:")
+                            for sv in sub_vals:
+                                lines.append(f"        - {sv}")
+                else:
+                    lines.append(f"    - {val}")
 
     return "\n".join(lines)
 

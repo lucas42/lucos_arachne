@@ -415,6 +415,124 @@ def test_find_entities_property_not_found():
 
 
 # ---------------------------------------------------------------------------
+# get_entity
+# ---------------------------------------------------------------------------
+
+def _bnode_binding(bnode_id: str) -> dict:
+    return {"type": "bnode", "value": bnode_id}
+
+
+def test_get_entity_basic():
+    """get_entity returns URI and literal properties for an entity."""
+    entity_response = _sparql_response([
+        {"p": _uri_binding("http://www.w3.org/2004/02/skos/core#prefLabel"), "o": _literal("Alice")},
+        {"p": _uri_binding("https://schema.org/birthDate"), "o": _literal("1990-03-15")},
+    ])
+
+    with patch("server.requests.get", return_value=entity_response):
+        result = server.get_entity("https://arachne.l42.eu/person/1")
+
+    assert "Entity: <https://arachne.l42.eu/person/1>" in result
+    assert "skos:prefLabel" in result
+    assert "Alice" in result
+    assert "birthDate" in result
+    assert "1990-03-15" in result
+
+
+def test_get_entity_not_found():
+    """get_entity returns a helpful message when the URI has no properties."""
+    entity_response = _sparql_response([])
+
+    with patch("server.requests.get", return_value=entity_response):
+        result = server.get_entity("https://arachne.l42.eu/person/99")
+
+    assert "No properties found" in result
+    assert "https://arachne.l42.eu/person/99" in result
+
+
+def test_get_entity_invalid_uri():
+    """get_entity rejects URIs containing injection characters."""
+    result = server.get_entity("https://example.com/foo>bar")
+    assert "Invalid URI" in result
+
+
+def test_get_entity_bnode_single():
+    """get_entity resolves a single blank node value and displays its sub-properties."""
+    entity_response = _sparql_response([
+        {
+            "p": _uri_binding("https://arachne.l42.eu/ontology/festivalStartsOn"),
+            "o": _bnode_binding("b0"),
+            "bp": _uri_binding("https://arachne.l42.eu/ontology/month"),
+            "bo": _literal("7"),
+        },
+        {
+            "p": _uri_binding("https://arachne.l42.eu/ontology/festivalStartsOn"),
+            "o": _bnode_binding("b0"),
+            "bp": _uri_binding("https://arachne.l42.eu/ontology/day"),
+            "bo": _literal("15"),
+        },
+    ])
+
+    with patch("server.requests.get", return_value=entity_response):
+        result = server.get_entity("https://arachne.l42.eu/festival/1")
+
+    # The blank node raw ID should not appear in output
+    assert "b0" not in result
+    # Sub-properties should be present
+    assert "month" in result
+    assert '"7"' in result
+    assert "day" in result
+    assert '"15"' in result
+    # Should be listed under the parent property header
+    assert "festivalStartsOn:" in result
+
+
+def test_get_entity_multiple_bnodes_same_property():
+    """get_entity handles multiple blank node values for the same property."""
+    entity_response = _sparql_response([
+        {
+            "p": _uri_binding("https://arachne.l42.eu/ontology/festivalStartsOn"),
+            "o": _bnode_binding("b0"),
+            "bp": _uri_binding("https://arachne.l42.eu/ontology/month"),
+            "bo": _literal("7"),
+        },
+        {
+            "p": _uri_binding("https://arachne.l42.eu/ontology/festivalStartsOn"),
+            "o": _bnode_binding("b1"),
+            "bp": _uri_binding("https://arachne.l42.eu/ontology/month"),
+            "bo": _literal("8"),
+        },
+    ])
+
+    with patch("server.requests.get", return_value=entity_response):
+        result = server.get_entity("https://arachne.l42.eu/festival/1")
+
+    assert "b0" not in result
+    assert "b1" not in result
+    assert '"7"' in result
+    assert '"8"' in result
+    assert "festivalStartsOn:" in result
+
+
+def test_get_entity_bnode_without_sub_properties():
+    """get_entity handles a blank node that has no resolvable sub-properties."""
+    entity_response = _sparql_response([
+        {
+            "p": _uri_binding("https://schema.org/address"),
+            "o": _bnode_binding("b0"),
+            # No bp/bo — the OPTIONAL returned nothing
+        },
+    ])
+
+    with patch("server.requests.get", return_value=entity_response):
+        result = server.get_entity("https://arachne.l42.eu/person/1")
+
+    # Property should still appear, blank node ID should not
+    assert "address" in result
+    assert "b0" not in result
+
+
+# ---------------------------------------------------------------------------
 # count_by_property
 # ---------------------------------------------------------------------------
 
