@@ -199,12 +199,12 @@
         },
         "lucos-loganne-pythonclient": {
             "hashes": [
-                "sha256:0acb50b3c5ebb7c75db598463ec9a8074789ef37693fe923a5e7a9cee180fbef",
-                "sha256:e9289eafb35e6fabe7fd78ed3a663379f5f70c644959e5a3889da2141b709277"
+                "sha256:0ca0821589cc61267ff6b2324c0bff0f55de01a27435bbdc66ae601b3f2bb486",
+                "sha256:56cbb6f0b0105f15079d2a238671d31812154961d55861073f6392412c550f1c"
             ],
             "index": "pypi",
             "markers": "python_version >= '3.8'",
-            "version": "==1.0.21"
+            "version": "==1.0.24"
         },
         "lucos-schedule-tracker-pythonclient": {
             "hashes": [
