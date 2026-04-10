@@ -289,7 +289,7 @@ def list_types() -> str:
         TRIPLESTORE_SPARQL_URL,
         params={"query": query, "format": "json"},
         auth=TRIPLESTORE_AUTH,
-        timeout=30,
+        timeout=60,
     )
     response.raise_for_status()
     data = response.json()
