@@ -30,6 +30,7 @@ if __name__ == "__main__":
 	try:
 		all_item_ids = set()
 		all_track_ids = set()
+		has_failures = False
 		for system, url in live_systems.items():
 			tracker_system = f"lucos_arachne_ingestor_{system}"
 			try:
@@ -40,6 +41,7 @@ if __name__ == "__main__":
 				all_track_ids |= track_ids
 				updateScheduleTracker(success=True, system=tracker_system)
 			except Exception as e:
+				has_failures = True
 				error_message = f"Ingest of {system} failed: {e}"
 				print(error_message, flush=True)
 				updateScheduleTracker(success=False, system=tracker_system, message=error_message)
@@ -52,6 +54,7 @@ if __name__ == "__main__":
 				replace_graph_in_triplestore(graph_uri, content, content_type)
 				updateScheduleTracker(success=True, system=tracker_system)
 			except Exception as e:
+				has_failures = True
 				error_message = f"Ingest of {system} failed: {e}"
 				print(error_message, flush=True)
 				updateScheduleTracker(success=False, system=tracker_system, message=error_message)
@@ -60,12 +63,16 @@ if __name__ == "__main__":
 			compute_inferences()
 			updateScheduleTracker(success=True, system=tracker_system)
 		except Exception as e:
+			has_failures = True
 			error_message = f"Inference computation failed: {e}"
 			print(error_message, flush=True)
 			updateScheduleTracker(success=False, system=tracker_system, message=error_message)
 		all_graph_uris = list(live_systems.values()) + [graph_uri for graph_uri, _, _ in ontology_cache.values()] + [INFERRED_GRAPH]
-		cleanup_triplestore(all_graph_uris)
-		cleanup_searchindex(all_item_ids, all_track_ids)
+		if has_failures:
+			print("Skipping cleanup: one or more sources failed to ingest. Stale items will be cleaned up on the next successful run.", flush=True)
+		else:
+			cleanup_triplestore(all_graph_uris)
+			cleanup_searchindex(all_item_ids, all_track_ids)
 
 		updateLoganne(type="knowledgeIngest", humanReadable="Data ingested into knowledge graph", url=BASE_URL)
 		updateScheduleTracker(success=True, system="lucos_arachne_ingestor")
