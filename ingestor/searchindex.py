@@ -284,7 +284,7 @@ typesense_client = typesense.Client({
         "protocol": "http",
     }],
     "api_key": KEY_LUCOS_ARACHNE,
-    "connection_timeout_seconds": 2
+    "connection_timeout_seconds": 30
 })
 
 
