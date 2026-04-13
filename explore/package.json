@@ -17,7 +17,7 @@
   },
   "homepage": "https://github.com/lucas42/lucos_arachne#readme",
   "dependencies": {
-    "ejs": "^5.0.1",
+    "ejs": "^5.0.2",
     "express": "^5.2.1",
     "express-rate-limit": "^8.3.2"
   },
