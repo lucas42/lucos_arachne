@@ -13,12 +13,14 @@ app.use(express.static('./resources', {extensions: ['json']}));
 app.get('/_info', catchErrors(async (req, res) => {
 	const search = checkSearch();
 	const ingestor = checkIngestor();
-	const [searchResult, ingestorResult] = await Promise.all([search, ingestor]);
+	const triplestore = checkTriplestore();
+	const [searchResult, ingestorResult, triplestoreResult] = await Promise.all([search, ingestor, triplestore]);
 	res.json({
 		system: 'lucos_arachne',
 		checks: {
 			search: searchResult,
 			ingestor: ingestorResult,
+			triplestore: triplestoreResult,
 		},
 		metrics: {},
 		ci: { circle: 'gh/lucas42/lucos_arachne' },
@@ -31,35 +33,59 @@ app.get('/_info', catchErrors(async (req, res) => {
 
 async function checkSearch() {
 	const techDetail = 'GET /collections/items to confirm Typesense is up and the items collection exists';
+	const failThreshold = 3;
 	try {
 		const response = await fetch('http://search:8108/collections/items', {
 			headers: { 'X-TYPESENSE-API-KEY': process.env.KEY_LUCOS_ARACHNE },
 			signal: AbortSignal.timeout(450),
 		});
-		if (!response.ok) return { ok: false, techDetail, debug: `HTTP ${response.status}` };
-		return { ok: true, techDetail };
+		if (!response.ok) return { ok: false, techDetail, failThreshold, debug: `HTTP ${response.status}` };
+		return { ok: true, techDetail, failThreshold };
 	} catch (err) {
-		return { ok: false, techDetail, debug: err.message };
+		return { ok: false, techDetail, failThreshold, debug: err.message };
 	}
 }
 
 function checkIngestor() {
 	const techDetail = 'TCP connect to ingestor:8099 to confirm the process is running';
+	const failThreshold = 3;
 	return new Promise((resolve) => {
 		const timeout = setTimeout(() => {
 			socket.destroy();
-			resolve({ ok: false, techDetail, debug: 'timeout' });
+			resolve({ ok: false, techDetail, failThreshold, debug: 'timeout' });
 		}, 450);
 		const socket = net.connect(8099, 'ingestor', () => {
 			clearTimeout(timeout);
 			socket.end();
-			resolve({ ok: true, techDetail });
+			resolve({ ok: true, techDetail, failThreshold });
 		});
 		socket.on('error', (err) => {
 			clearTimeout(timeout);
-			resolve({ ok: false, techDetail, debug: err.message });
+			resolve({ ok: false, techDetail, failThreshold, debug: err.message });
 		});
 	});
+}
+
+async function checkTriplestore() {
+	const techDetail = 'ASK query against http://triplestore:3030/raw_arachne/sparql to confirm the triplestore is up and accepting queries';
+	const failThreshold = 3;
+	try {
+		const body = new URLSearchParams({ query: 'ASK {}' });
+		const response = await fetch('http://triplestore:3030/raw_arachne/sparql', {
+			method: 'POST',
+			headers: {
+				'Content-Type': 'application/x-www-form-urlencoded',
+				'Accept': 'application/sparql-results+json',
+				'Authorization': `Basic ${Buffer.from(`lucos_arachne:${process.env.KEY_LUCOS_ARACHNE}`).toString('base64')}`,
+			},
+			body: body.toString(),
+			signal: AbortSignal.timeout(450),
+		});
+		if (!response.ok) return { ok: false, techDetail, failThreshold, debug: `HTTP ${response.status}` };
+		return { ok: true, techDetail, failThreshold };
+	} catch (err) {
+		return { ok: false, techDetail, failThreshold, debug: err.message };
+	}
 }
 
 
