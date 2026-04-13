@@ -21,6 +21,7 @@ from searchindex import (
 MO = Namespace("http://purl.org/ontology/mo/")
 BASE = Namespace("http://example.com/")
 MEDIA = Namespace("https://media-metadata.l42.eu/")
+MEDIA_MANAGER_ONTOLOGY = Namespace("https://media-metadata.l42.eu/ontology/")
 EOLAS = Namespace("https://eolas.l42.eu/metadata/")
 
 
@@ -124,12 +125,16 @@ def test_graph_to_track_docs_with_optional_fields():
         "Full Track",
         **{
             FOAF.maker: URIRef("https://media-metadata.l42.eu/search?p.artist=Radiohead"),
-            DCTERMS.isPartOf: URIRef("https://media-metadata.l42.eu/search?p.album=OK%20Computer"),
+            MEDIA_MANAGER_ONTOLOGY.onAlbum: URIRef("https://media-metadata.l42.eu/albums/1"),
             MO.duration: Literal("PT253S"),
             DCTERMS.language: URIRef("https://eolas.l42.eu/metadata/language/en/"),
             MO.lyrics: Literal("I'm a creep"),
         }
     )
+    # Add the album entity with its label to the graph
+    album_uri = URIRef("https://media-metadata.l42.eu/albums/1")
+    g.add((album_uri, SKOS.prefLabel, Literal("OK Computer")))
+
     docs = graph_to_track_docs(g)
     assert len(docs) == 1
     doc = docs[0]
@@ -141,14 +146,56 @@ def test_graph_to_track_docs_with_optional_fields():
     assert doc["lyrics"] == "I'm a creep"
 
 
-def test_graph_to_track_docs_skips_musicbrainz_album():
+def test_graph_to_track_docs_skips_missing_album_label():
+    # If a track references an album via onAlbum, but the album entity
+    # is not in the graph (e.g., partial graph), skip that album gracefully.
     g = _make_track_graph(
         "http://example.com/track/4",
-        "MBZ Track",
+        "Track with Missing Album",
         **{
-            DCTERMS.isPartOf: URIRef("https://musicbrainz.org/release/abc123"),
+            MEDIA_MANAGER_ONTOLOGY.onAlbum: URIRef("https://media-metadata.l42.eu/albums/missing"),
         }
     )
     docs = graph_to_track_docs(g)
     assert len(docs) == 1
     assert "album" not in docs[0]
+
+
+def test_graph_to_track_docs_populates_album_from_onAlbum_predicate():
+    # Verify that album field is populated by looking up album entity's skos:prefLabel
+    g = _make_track_graph(
+        "http://example.com/track/5",
+        "Album Test Track",
+        **{
+            MEDIA_MANAGER_ONTOLOGY.onAlbum: URIRef("https://media-metadata.l42.eu/albums/1"),
+        }
+    )
+    # Add album entity with its label
+    album_uri = URIRef("https://media-metadata.l42.eu/albums/1")
+    g.add((album_uri, SKOS.prefLabel, Literal("Test Album")))
+
+    docs = graph_to_track_docs(g)
+    assert len(docs) == 1
+    assert docs[0]["album"] == ["Test Album"]
+
+
+def test_graph_to_track_docs_multiple_albums():
+    # Verify that multiple album references are all populated correctly
+    g = _make_track_graph(
+        "http://example.com/track/6",
+        "Multi-Album Track",
+        **{
+            MEDIA_MANAGER_ONTOLOGY.onAlbum: URIRef("https://media-metadata.l42.eu/albums/1"),
+        }
+    )
+    # Add second album reference (though this is unusual, test for robustness)
+    track_uri = URIRef("http://example.com/track/6")
+    g.add((track_uri, MEDIA_MANAGER_ONTOLOGY.onAlbum, URIRef("https://media-metadata.l42.eu/albums/2")))
+
+    # Add album entities
+    g.add((URIRef("https://media-metadata.l42.eu/albums/1"), SKOS.prefLabel, Literal("Album One")))
+    g.add((URIRef("https://media-metadata.l42.eu/albums/2"), SKOS.prefLabel, Literal("Album Two")))
+
+    docs = graph_to_track_docs(g)
+    assert len(docs) == 1
+    assert set(docs[0]["album"]) == {"Album One", "Album Two"}

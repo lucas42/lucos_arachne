@@ -8,6 +8,7 @@ import urllib.parse
 MO = Namespace("http://purl.org/ontology/mo/")
 LOC_NS = Namespace("http://www.loc.gov/mads/rdf/v1#")
 EOLAS_NS = Namespace(f"https://eolas.l42.eu/ontology/")
+MEDIA_MANAGER_ONTOLOGY = Namespace("https://media-metadata.l42.eu/ontology/")
 SDO = Namespace("https://schema.org/")
 
 # RDF/OWL types which shouldn't be indexed in search index
@@ -162,16 +163,15 @@ def graph_to_track_docs(graph: Graph):
 		if artists:
 			doc["artist"] = artists
 
-		# album (dc:isPartOf) — search URL values only, skip MusicBrainz URLs
+		# album (onAlbum) — look up album's skos:prefLabel
 		albums = []
-		for o in graph.objects(subj, DCTERMS.isPartOf):
-			uri = str(o)
-			parsed_host = urllib.parse.urlparse(uri).hostname or ""
-			if parsed_host == "musicbrainz.org" or parsed_host.endswith(".musicbrainz.org"):
-				continue
-			val = _extract_search_url_value(uri)
-			if val:
-				albums.append(val)
+		for album_uri in graph.objects(subj, MEDIA_MANAGER_ONTOLOGY.onAlbum):
+			try:
+				album_label = get_label(graph, album_uri)
+				albums.append(album_label)
+			except ValueError:
+				# Album URI not found in graph, skip it
+				pass
 		if albums:
 			doc["album"] = albums
 
