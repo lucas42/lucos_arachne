@@ -68,7 +68,7 @@ function checkIngestor() {
 
 async function checkTriplestore() {
 	const techDetail = 'ASK query against http://triplestore:3030/raw_arachne/sparql to confirm the triplestore is up and accepting queries';
-	const failThreshold = 3;
+	const failThreshold = 7;
 	try {
 		const body = new URLSearchParams({ query: 'ASK {}' });
 		const response = await fetch('http://triplestore:3030/raw_arachne/sparql', {
