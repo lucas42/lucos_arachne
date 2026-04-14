@@ -79,6 +79,11 @@ services:
     container_name: lucos_arachne_explore
     image: lucas42/lucos_arachne_explore
     restart: always
+    depends_on:
+      triplestore:
+        condition: service_healthy
+      search:
+        condition: service_healthy
     environment:
       - PORT=8080
       - KEY_LUCOS_ARACHNE
