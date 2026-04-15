@@ -75,6 +75,9 @@ class WebhookHandler(BaseHTTPRequestHandler):
 			elif event["type"].endswith("Merged"):
 				merge_items_in_triplestore(event["sourceUri"], event["targetUri"], live_systems[event["source"]])
 				delete_doc_in_searchindex(event["source"], event["sourceUri"])
+				(content, content_type) = fetch_url(event["source"], event["targetUri"])
+				replace_item_in_triplestore(event["targetUri"], live_systems[event["source"]], content, content_type)
+				update_searchindex(event["source"], content, content_type)
 				self.send_response(200, "OK")
 				self.send_header("Content-type", "text/plain")
 				self.end_headers()
