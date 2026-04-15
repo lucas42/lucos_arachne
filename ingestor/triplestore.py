@@ -81,14 +81,22 @@ def replace_item_in_triplestore(item_uri, graph_uri, content, content_type):
 
 
 def merge_items_in_triplestore(source_uri, target_uri, graph_uri):
-	"""Move all triples from source_uri to target_uri within graph_uri, then delete source_uri."""
+	"""Move subject-position triples from source_uri to target_uri within graph_uri,
+	delete source_uri, and repoint any object-position references across all graphs."""
 	update_resp = session.post(
 		"http://triplestore:3030/raw_arachne/update",
 		headers={"Content-Type": "application/sparql-update"},
 		data=(
+			# Move subject-position triples to target within the source's graph
 			f"INSERT {{ GRAPH <{graph_uri}> {{ <{target_uri}> ?p ?o }} }}\n"
 			f"WHERE {{ GRAPH <{graph_uri}> {{ <{source_uri}> ?p ?o }} }} ;\n"
-			f"DELETE WHERE {{ GRAPH <{graph_uri}> {{ <{source_uri}> ?p ?o }} }}"
+			# Delete source's subject-position triples
+			f"DELETE WHERE {{ GRAPH <{graph_uri}> {{ <{source_uri}> ?p ?o }} }} ;\n"
+			# Repoint object-position references across all named graphs
+			f"INSERT {{ GRAPH ?g {{ ?s ?p <{target_uri}> }} }}\n"
+			f"WHERE {{ GRAPH ?g {{ ?s ?p <{source_uri}> }} }} ;\n"
+			# Delete old object-position references
+			f"DELETE WHERE {{ GRAPH ?g {{ ?s ?p <{source_uri}> }} }}"
 		),
 	)
 	update_resp.raise_for_status()
