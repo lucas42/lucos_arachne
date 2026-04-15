@@ -80,6 +80,20 @@ def replace_item_in_triplestore(item_uri, graph_uri, content, content_type):
 	add_triples(graph_uri, content, content_type)
 
 
+def merge_items_in_triplestore(source_uri, target_uri, graph_uri):
+	"""Move all triples from source_uri to target_uri within graph_uri, then delete source_uri."""
+	update_resp = session.post(
+		"http://triplestore:3030/raw_arachne/update",
+		headers={"Content-Type": "application/sparql-update"},
+		data=(
+			f"INSERT {{ GRAPH <{graph_uri}> {{ <{target_uri}> ?p ?o }} }}\n"
+			f"WHERE {{ GRAPH <{graph_uri}> {{ <{source_uri}> ?p ?o }} }} ;\n"
+			f"DELETE WHERE {{ GRAPH <{graph_uri}> {{ <{source_uri}> ?p ?o }} }}"
+		),
+	)
+	update_resp.raise_for_status()
+
+
 INFERRED_GRAPH = "urn:lucos:inferred"
 OWL_TRANSITIVE = "http://www.w3.org/2002/07/owl#TransitiveProperty"
 OWL_INVERSE_OF  = "http://www.w3.org/2002/07/owl#inverseOf"
