@@ -12,6 +12,7 @@ for mod_name in ("authorised_fetch", "triplestore", "searchindex"):
 	stub.live_systems = {}
 	stub.replace_item_in_triplestore = None
 	stub.delete_item_in_triplestore = None
+	stub.merge_items_in_triplestore = None
 	stub.update_searchindex = None
 	stub.delete_doc_in_searchindex = None
 	sys.modules[mod_name] = stub

@@ -9,6 +9,10 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+# Ensure server.py is not cached from a previous test file's stub imports —
+# pop it so it's freshly imported with our mocks bound to its module globals.
+sys.modules.pop("server", None)
+
 # Stub out non-stdlib modules before importing server
 _fetch_url_mock = MagicMock()
 _replace_item_mock = MagicMock()
