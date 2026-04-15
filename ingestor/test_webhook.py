@@ -163,7 +163,7 @@ def test_merged_event_merges_in_triplestore():
     )
 
 
-def test_merged_event_does_not_call_fetch_or_delete():
+def test_merged_event_removes_source_from_searchindex():
     _make_request({
         "type": "albumMerged",
         "source": "lucos_eolas",
@@ -172,7 +172,7 @@ def test_merged_event_does_not_call_fetch_or_delete():
     })
     _fetch_url_mock.assert_not_called()
     _delete_item_mock.assert_not_called()
-    _delete_doc_mock.assert_not_called()
+    _delete_doc_mock.assert_called_once_with("lucos_eolas", "https://eolas.l42.eu/metadata/old")
 
 
 def test_merged_event_generic_suffix():

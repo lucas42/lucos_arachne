@@ -74,6 +74,7 @@ class WebhookHandler(BaseHTTPRequestHandler):
 				self.wfile.write(bytes("Deleted", "utf-8"))
 			elif event["type"].endswith("Merged"):
 				merge_items_in_triplestore(event["sourceUri"], event["targetUri"], live_systems[event["source"]])
+				delete_doc_in_searchindex(event["source"], event["sourceUri"])
 				self.send_response(200, "OK")
 				self.send_header("Content-type", "text/plain")
 				self.end_headers()
