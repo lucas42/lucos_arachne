@@ -152,6 +152,7 @@ def test_deleted_event_removes_from_triplestore():
 
 
 def test_merged_event_merges_in_triplestore():
+    _fetch_url_mock.return_value = ("<rdf/>", "application/rdf+xml")
     status, body = _make_request({
         "type": "albumMerged",
         "source": "lucos_eolas",
@@ -168,19 +169,38 @@ def test_merged_event_merges_in_triplestore():
 
 
 def test_merged_event_removes_source_from_searchindex():
+    _fetch_url_mock.return_value = ("<rdf/>", "application/rdf+xml")
     _make_request({
         "type": "albumMerged",
         "source": "lucos_eolas",
         "sourceUri": "https://eolas.l42.eu/metadata/old",
         "targetUri": "https://eolas.l42.eu/metadata/new",
     })
-    _fetch_url_mock.assert_not_called()
     _delete_item_mock.assert_not_called()
     _delete_doc_mock.assert_called_once_with("lucos_eolas", "https://eolas.l42.eu/metadata/old")
 
 
+def test_merged_event_refreshes_target_in_searchindex():
+    _fetch_url_mock.return_value = ("<rdf/>", "application/rdf+xml")
+    _make_request({
+        "type": "albumMerged",
+        "source": "lucos_eolas",
+        "sourceUri": "https://eolas.l42.eu/metadata/old",
+        "targetUri": "https://eolas.l42.eu/metadata/new",
+    })
+    _fetch_url_mock.assert_called_once_with("lucos_eolas", "https://eolas.l42.eu/metadata/new")
+    _replace_item_mock.assert_called_once_with(
+        "https://eolas.l42.eu/metadata/new",
+        _live_systems["lucos_eolas"],
+        "<rdf/>",
+        "application/rdf+xml",
+    )
+    _update_searchindex_mock.assert_called_once_with("lucos_eolas", "<rdf/>", "application/rdf+xml")
+
+
 def test_merged_event_generic_suffix():
     """Any event type ending in 'Merged' is handled, not just 'albumMerged'."""
+    _fetch_url_mock.return_value = ("<rdf/>", "application/rdf+xml")
     status, body = _make_request({
         "type": "personMerged",
         "source": "lucos_contacts",
@@ -198,6 +218,7 @@ def test_merged_event_generic_suffix():
 
 def test_merged_event_idempotent_second_call():
     """Calling merge twice for the same URIs should not raise — triplestore handles idempotency."""
+    _fetch_url_mock.return_value = ("<rdf/>", "application/rdf+xml")
     for _ in range(2):
         status, body = _make_request({
             "type": "albumMerged",
