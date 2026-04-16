@@ -7,6 +7,14 @@ updates:
       time: '07:00'
     allow:
       - dependency-type: all
+    groups:
+      minor-and-patch:
+        update-types:
+          - minor
+          - patch
+      major:
+        update-types:
+          - major
   - package-ecosystem: pip
     directory: /ingestor
     schedule:
@@ -14,6 +22,14 @@ updates:
       time: '07:00'
     allow:
       - dependency-type: all
+    groups:
+      minor-and-patch:
+        update-types:
+          - minor
+          - patch
+      major:
+        update-types:
+          - major
   - package-ecosystem: docker
     directory: /triplestore
     schedule:
@@ -21,6 +37,14 @@ updates:
       time: '07:00'
     allow:
       - dependency-type: all
+    groups:
+      minor-and-patch:
+        update-types:
+          - minor
+          - patch
+      major:
+        update-types:
+          - major
   - package-ecosystem: maven
     directory: /triplestore
     schedule:
@@ -28,6 +52,14 @@ updates:
       time: '07:00'
     allow:
       - dependency-type: all
+    groups:
+      minor-and-patch:
+        update-types:
+          - minor
+          - patch
+      major:
+        update-types:
+          - major
   - package-ecosystem: docker
     directory: /search
     schedule:
@@ -35,6 +67,14 @@ updates:
       time: '07:00'
     allow:
       - dependency-type: all
+    groups:
+      minor-and-patch:
+        update-types:
+          - minor
+          - patch
+      major:
+        update-types:
+          - major
   - package-ecosystem: docker
     directory: /web
     schedule:
@@ -42,6 +82,14 @@ updates:
       time: '07:00'
     allow:
       - dependency-type: all
+    groups:
+      minor-and-patch:
+        update-types:
+          - minor
+          - patch
+      major:
+        update-types:
+          - major
   - package-ecosystem: docker
     directory: /explore
     schedule:
@@ -49,6 +97,14 @@ updates:
       time: '07:00'
     allow:
       - dependency-type: all
+    groups:
+      minor-and-patch:
+        update-types:
+          - minor
+          - patch
+      major:
+        update-types:
+          - major
   - package-ecosystem: npm
     directory: /explore
     schedule:
@@ -57,6 +113,14 @@ updates:
     open-pull-requests-limit: 10
     allow:
       - dependency-type: all
+    groups:
+      minor-and-patch:
+        update-types:
+          - minor
+          - patch
+      major:
+        update-types:
+          - major
   - package-ecosystem: docker
     directory: /mcp
     schedule:
@@ -64,6 +128,14 @@ updates:
       time: '07:00'
     allow:
       - dependency-type: all
+    groups:
+      minor-and-patch:
+        update-types:
+          - minor
+          - patch
+      major:
+        update-types:
+          - major
   - package-ecosystem: pip
     directory: /mcp
     schedule:
@@ -71,6 +143,14 @@ updates:
       time: '07:00'
     allow:
       - dependency-type: all
+    groups:
+      minor-and-patch:
+        update-types:
+          - minor
+          - patch
+      major:
+        update-types:
+          - major
   - package-ecosystem: github-actions
     directory: /
     schedule:
@@ -78,3 +158,11 @@ updates:
       time: '07:00'
     allow:
       - dependency-type: all
+    groups:
+      minor-and-patch:
+        update-types:
+          - minor
+          - patch
+      major:
+        update-types:
+          - major
