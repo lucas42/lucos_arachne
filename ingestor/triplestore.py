@@ -29,6 +29,7 @@ ontology_cache = {
 	"rdfs": ("http://www.w3.org/2000/01/rdf-schema", "rdfs.ttl", "text/turtle"),
 	"loc_iso639-5": ("http://id.loc.gov/vocabulary/iso639-5/iso639-5_Language", "loc_iso639-5.rdf", "application/rdf+xml"),
 	"loc_mads": ("https://id.loc.gov/ontologies/madsrdf/v1.rdf", "loc_mads.rdf", "application/rdf+xml"),
+	"music_ontology": ("http://purl.org/ontology/mo/", "musicontology.n3", "text/turtle"),
 }
 
 session = requests.Session()
