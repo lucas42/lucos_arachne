@@ -1,6 +1,6 @@
 import json, os, sys, re
 import requests
-from rdflib import Graph, Namespace, RDF, RDFS, FOAF, SKOS, DC, Literal
+from rdflib import Graph, Namespace, RDF, RDFS, FOAF, SKOS, DC, Literal, URIRef
 from rdflib.namespace import DCTERMS
 import typesense
 import urllib.parse
@@ -90,8 +90,32 @@ def get_label(graph, uri):
 	raise ValueError(f"Unknown URI encountered when looking for label: {uri}")
 
 def get_category(graph, type):
+	# Check local graph first
 	for category in graph.objects(type, EOLAS_NS.hasCategory):
 		return get_label(graph, category)
+
+	# Fall back to querying the triplestore (e.g. for types whose category mappings
+	# are in the eolas named graph but not in the local document for webhook events)
+	query = f"""
+		SELECT ?category WHERE {{
+			GRAPH ?g {{
+				<{type}> <{EOLAS_NS.hasCategory}> ?category .
+			}}
+		}}
+		LIMIT 1
+	"""
+	resp = _triplestore_session.post(
+		"http://triplestore:3030/raw_arachne/sparql",
+		headers={"Accept": "application/json"},
+		data={"query": query},
+	)
+	resp.raise_for_status()
+	bindings = resp.json()["results"]["bindings"]
+	if bindings:
+		category_uri = URIRef(bindings[0]["category"]["value"])
+		# get_label already has its own triplestore fallback
+		return get_label(Graph(), category_uri)
+
 	raise ValueError(f"Can't find category for type {type}")
 
 def graph_to_typesense_docs(graph: Graph):

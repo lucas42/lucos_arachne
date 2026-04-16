@@ -19,6 +19,7 @@ from searchindex import (
     _parse_iso8601_duration,
     graph_to_track_docs,
     get_label,
+    get_category,
 )
 
 MO = Namespace("http://purl.org/ontology/mo/")
@@ -290,3 +291,74 @@ def test_get_label_raises_when_not_in_local_graph_or_triplestore():
             assert False, "Expected ValueError"
         except ValueError as e:
             assert "http://example.com/Unknown" in str(e)
+
+
+# ---------------------------------------------------------------------------
+# get_category — category lookup with triplestore fallback
+# ---------------------------------------------------------------------------
+
+EOLAS_NS = Namespace("https://eolas.l42.eu/ontology/")
+
+
+def _mock_category_triplestore_response(category_uri=None):
+    """Build a mock SPARQL response for a hasCategory query."""
+    mock_resp = MagicMock()
+    mock_resp.raise_for_status = MagicMock()
+    if category_uri:
+        mock_resp.json.return_value = {
+            "results": {"bindings": [{"category": {"type": "uri", "value": category_uri}}]}
+        }
+    else:
+        mock_resp.json.return_value = {"results": {"bindings": []}}
+    return mock_resp
+
+
+def test_get_category_finds_category_in_local_graph():
+    """Category found via eolas:hasCategory in local graph — no triplestore query."""
+    g = Graph()
+    type_uri = URIRef("http://example.com/Type")
+    category_uri = URIRef("https://eolas.l42.eu/ontology/SomeCategory")
+    g.add((type_uri, EOLAS_NS.hasCategory, category_uri))
+    g.add((category_uri, SKOS.prefLabel, Literal("Some Category")))
+    with patch.object(searchindex._triplestore_session, "post") as mock_post:
+        result = get_category(g, type_uri)
+    assert result == "Some Category"
+    mock_post.assert_not_called()
+
+
+def test_get_category_falls_back_to_triplestore():
+    """Category not in local graph: falls back to SPARQL query for hasCategory."""
+    g = Graph()
+    type_uri = URIRef("http://purl.org/ontology/mo/Record")
+    category_uri = "https://eolas.l42.eu/ontology/MusicCategory"
+    label_bindings = [
+        {"pred": {"value": "http://www.w3.org/2004/02/skos/core#prefLabel"}, "label": {"value": "Music", "xml:lang": "en"}},
+    ]
+
+    call_count = 0
+    def mock_post_side_effect(url, **kwargs):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            # First call: hasCategory lookup
+            return _mock_category_triplestore_response(category_uri)
+        else:
+            # Second call: label lookup for the category URI
+            return _mock_triplestore_response(label_bindings)
+
+    with patch.object(searchindex._triplestore_session, "post", side_effect=mock_post_side_effect):
+        result = get_category(g, type_uri)
+    assert result == "Music"
+    assert call_count == 2
+
+
+def test_get_category_raises_when_not_in_local_graph_or_triplestore():
+    """ValueError raised when type has no category mapping anywhere."""
+    g = Graph()
+    type_uri = URIRef("http://example.com/UnknownType")
+    with patch.object(searchindex._triplestore_session, "post", return_value=_mock_category_triplestore_response(None)):
+        try:
+            get_category(g, type_uri)
+            assert False, "Expected ValueError"
+        except ValueError as e:
+            assert "http://example.com/UnknownType" in str(e)
