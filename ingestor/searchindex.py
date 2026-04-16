@@ -1,4 +1,5 @@
 import json, os, sys, re
+import requests
 from rdflib import Graph, Namespace, RDF, RDFS, FOAF, SKOS, DC, Literal
 from rdflib.namespace import DCTERMS
 import typesense
@@ -29,10 +30,62 @@ if not KEY_LUCOS_ARACHNE:
 		"No KEY_LUCOS_ARACHNE environment variable found — won't be able to authenticate against triplestore endpoint"
 	)
 
+_triplestore_session = requests.Session()
+_triplestore_session.auth = ("lucos_arachne", KEY_LUCOS_ARACHNE)
+
+def _get_label_from_triplestore(uri):
+	"""Query the Fuseki triplestore for a skos:prefLabel or rdfs:label for the given URI.
+	Used as a fallback when the label is not present in the local rdflib graph (e.g. for
+	ontology type URIs referenced by individual item documents in webhook events)."""
+	query = f"""
+		SELECT ?label ?pred WHERE {{
+			GRAPH ?g {{
+				<{uri}> ?pred ?label .
+				FILTER(?pred IN (<{SKOS.prefLabel}>, <{RDFS.label}>))
+			}}
+			FILTER(isLiteral(?label) && (lang(?label) = 'en' || lang(?label) = ''))
+		}}
+	"""
+	resp = _triplestore_session.post(
+		"http://triplestore:3030/raw_arachne/sparql",
+		headers={"Accept": "application/json"},
+		data={"query": query},
+	)
+	resp.raise_for_status()
+	bindings = resp.json()["results"]["bindings"]
+
+	# Prefer skos:prefLabel over rdfs:label, English over no-language tag
+	preference_order = [
+		(str(SKOS.prefLabel), "en"),
+		(str(SKOS.prefLabel), ""),
+		(str(RDFS.label), "en"),
+		(str(RDFS.label), ""),
+	]
+	results = {
+		(b["pred"]["value"], b["label"].get("xml:lang", "")): b["label"]["value"]
+		for b in bindings
+	}
+	for pred, lang in preference_order:
+		if (pred, lang) in results:
+			return results[(pred, lang)]
+	return None
+
 def get_label(graph, uri):
+	# Check skos:prefLabel in local graph
 	for label in graph.objects(uri, SKOS.prefLabel):
 		if label.language is None or label.language == 'en':
 			return str(label)
+
+	# Check rdfs:label in local graph
+	for label in graph.objects(uri, RDFS.label):
+		if label.language is None or label.language == 'en':
+			return str(label)
+
+	# Fall back to querying the triplestore (e.g. for ontology type URIs not present
+	# in the local graph when processing individual item documents from webhook events)
+	label = _get_label_from_triplestore(str(uri))
+	if label is not None:
+		return label
 
 	raise ValueError(f"Unknown URI encountered when looking for label: {uri}")
 
