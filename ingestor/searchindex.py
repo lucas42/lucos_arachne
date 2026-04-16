@@ -1,6 +1,5 @@
 import json, os, sys, re
-import requests
-from rdflib import Graph, Namespace, RDF, RDFS, FOAF, SKOS, DC, Literal, URIRef
+from rdflib import Graph, Namespace, RDF, RDFS, FOAF, SKOS, DC, Literal
 from rdflib.namespace import DCTERMS
 import typesense
 import urllib.parse
@@ -27,48 +26,8 @@ KEY_LUCOS_ARACHNE = os.environ.get("KEY_LUCOS_ARACHNE")
 
 if not KEY_LUCOS_ARACHNE:
 	sys.exit(
-		"No KEY_LUCOS_ARACHNE environment variable found — won't be able to authenticate against triplestore endpoint"
+		"No KEY_LUCOS_ARACHNE environment variable found — won't be able to authenticate against search index"
 	)
-
-_triplestore_session = requests.Session()
-_triplestore_session.auth = ("lucos_arachne", KEY_LUCOS_ARACHNE)
-
-def _get_label_from_triplestore(uri):
-	"""Query the Fuseki triplestore for a skos:prefLabel or rdfs:label for the given URI.
-	Used as a fallback when the label is not present in the local rdflib graph (e.g. for
-	ontology type URIs referenced by individual item documents in webhook events)."""
-	query = f"""
-		SELECT ?label ?pred WHERE {{
-			GRAPH ?g {{
-				<{uri}> ?pred ?label .
-				FILTER(?pred IN (<{SKOS.prefLabel}>, <{RDFS.label}>))
-			}}
-			FILTER(isLiteral(?label) && (lang(?label) = 'en' || lang(?label) = ''))
-		}}
-	"""
-	resp = _triplestore_session.post(
-		"http://triplestore:3030/raw_arachne/sparql",
-		headers={"Accept": "application/json"},
-		data={"query": query},
-	)
-	resp.raise_for_status()
-	bindings = resp.json()["results"]["bindings"]
-
-	# Prefer skos:prefLabel over rdfs:label, English over no-language tag
-	preference_order = [
-		(str(SKOS.prefLabel), "en"),
-		(str(SKOS.prefLabel), ""),
-		(str(RDFS.label), "en"),
-		(str(RDFS.label), ""),
-	]
-	results = {
-		(b["pred"]["value"], b["label"].get("xml:lang", "")): b["label"]["value"]
-		for b in bindings
-	}
-	for pred, lang in preference_order:
-		if (pred, lang) in results:
-			return results[(pred, lang)]
-	return None
 
 def get_label(graph, uri):
 	# Check skos:prefLabel in local graph
@@ -81,42 +40,22 @@ def get_label(graph, uri):
 		if label.language is None or label.language == 'en':
 			return str(label)
 
-	# Fall back to querying the triplestore (e.g. for ontology type URIs not present
-	# in the local graph when processing individual item documents from webhook events)
-	label = _get_label_from_triplestore(str(uri))
-	if label is not None:
-		return label
-
-	raise ValueError(f"Unknown URI encountered when looking for label: {uri}")
+	raise ValueError(
+		f"Source RDF does not include a label for <{uri}>. "
+		f"The source's RDF export must include type metadata (skos:prefLabel and eolas:hasCategory) "
+		f"for every rdf:type it emits. See lucas42/lucos_arachne#371."
+	)
 
 def get_category(graph, type):
 	# Check local graph first
 	for category in graph.objects(type, EOLAS_NS.hasCategory):
 		return get_label(graph, category)
 
-	# Fall back to querying the triplestore (e.g. for types whose category mappings
-	# are in the eolas named graph but not in the local document for webhook events)
-	query = f"""
-		SELECT ?category WHERE {{
-			GRAPH ?g {{
-				<{type}> <{EOLAS_NS.hasCategory}> ?category .
-			}}
-		}}
-		LIMIT 1
-	"""
-	resp = _triplestore_session.post(
-		"http://triplestore:3030/raw_arachne/sparql",
-		headers={"Accept": "application/json"},
-		data={"query": query},
+	raise ValueError(
+		f"Source RDF does not include an eolas:hasCategory mapping for type <{type}>. "
+		f"The source's RDF export must include type metadata (skos:prefLabel and eolas:hasCategory) "
+		f"for every rdf:type it emits. See lucas42/lucos_arachne#371."
 	)
-	resp.raise_for_status()
-	bindings = resp.json()["results"]["bindings"]
-	if bindings:
-		category_uri = URIRef(bindings[0]["category"]["value"])
-		# get_label already has its own triplestore fallback
-		return get_label(Graph(), category_uri)
-
-	raise ValueError(f"Can't find category for type {type}")
 
 def graph_to_typesense_docs(graph: Graph):
 	"""

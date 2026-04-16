@@ -7,7 +7,6 @@ so we inject a dummy value before importing.
 import os
 os.environ.setdefault("KEY_LUCOS_ARACHNE", "test-key")
 
-from unittest.mock import MagicMock, patch
 from rdflib import Graph, Namespace, RDF, RDFS, Literal, URIRef
 from rdflib.namespace import SKOS, FOAF
 from rdflib.namespace import DCTERMS
@@ -152,7 +151,7 @@ def test_graph_to_track_docs_with_optional_fields():
 
 def test_graph_to_track_docs_skips_missing_album_label():
     # If a track references an album via onAlbum, but the album entity
-    # is not in the graph or the triplestore, skip that album gracefully.
+    # is not in the graph, skip that album gracefully.
     g = _make_track_graph(
         "http://example.com/track/4",
         "Track with Missing Album",
@@ -160,11 +159,7 @@ def test_graph_to_track_docs_skips_missing_album_label():
             MEDIA_MANAGER_ONTOLOGY.onAlbum: URIRef("https://media-metadata.l42.eu/albums/missing"),
         }
     )
-    empty_resp = MagicMock()
-    empty_resp.raise_for_status = MagicMock()
-    empty_resp.json.return_value = {"results": {"bindings": []}}
-    with patch.object(searchindex._triplestore_session, "post", return_value=empty_resp):
-        docs = graph_to_track_docs(g)
+    docs = graph_to_track_docs(g)
     assert len(docs) == 1
     assert "album" not in docs[0]
 
@@ -210,155 +205,79 @@ def test_graph_to_track_docs_multiple_albums():
 
 
 # ---------------------------------------------------------------------------
-# get_label — label lookup with triplestore fallback
+# get_label — label lookup (local graph only, no triplestore fallback)
 # ---------------------------------------------------------------------------
 
-def _mock_triplestore_response(bindings):
-    """Build a mock requests.Response for a SPARQL JSON result."""
-    mock_resp = MagicMock()
-    mock_resp.raise_for_status = MagicMock()
-    mock_resp.json.return_value = {"results": {"bindings": bindings}}
-    return mock_resp
-
-
 def test_get_label_finds_skos_prefLabel_in_local_graph():
-    """skos:prefLabel in local graph is returned without querying triplestore."""
+    """skos:prefLabel in local graph is returned."""
     g = Graph()
     uri = URIRef("http://example.com/Type")
     g.add((uri, SKOS.prefLabel, Literal("My Type")))
-    with patch.object(searchindex._triplestore_session, "post") as mock_post:
-        result = get_label(g, uri)
+    result = get_label(g, uri)
     assert result == "My Type"
-    mock_post.assert_not_called()
 
 
 def test_get_label_finds_rdfs_label_in_local_graph():
-    """rdfs:label in local graph is returned (no triplestore query needed)."""
+    """rdfs:label in local graph is returned."""
     g = Graph()
     uri = URIRef("http://example.com/Type")
     g.add((uri, RDFS.label, Literal("My RDF Type")))
-    with patch.object(searchindex._triplestore_session, "post") as mock_post:
-        result = get_label(g, uri)
+    result = get_label(g, uri)
     assert result == "My RDF Type"
-    mock_post.assert_not_called()
 
 
-def test_get_label_falls_back_to_triplestore_when_not_in_local_graph():
-    """When neither label predicate is in the local graph, queries the triplestore."""
+def test_get_label_raises_with_helpful_message_when_not_in_local_graph():
+    """ValueError pointing at the source is raised when type metadata is missing from the local graph."""
     g = Graph()
     uri = URIRef("http://purl.org/ontology/mo/Record")
-    mock_bindings = [
-        {"pred": {"value": "http://www.w3.org/2000/01/rdf-schema#label"}, "label": {"value": "record"}},
-    ]
-    with patch.object(searchindex._triplestore_session, "post", return_value=_mock_triplestore_response(mock_bindings)):
-        result = get_label(g, uri)
-    assert result == "record"
-
-
-def test_get_label_triplestore_prefers_skos_prefLabel_over_rdfs_label():
-    """When triplestore returns both predicates, skos:prefLabel is preferred."""
-    g = Graph()
-    uri = URIRef("http://purl.org/ontology/mo/Record")
-    mock_bindings = [
-        {"pred": {"value": "http://www.w3.org/2000/01/rdf-schema#label"}, "label": {"value": "record"}},
-        {"pred": {"value": "http://www.w3.org/2004/02/skos/core#prefLabel"}, "label": {"value": "Album", "xml:lang": "en"}},
-    ]
-    with patch.object(searchindex._triplestore_session, "post", return_value=_mock_triplestore_response(mock_bindings)):
-        result = get_label(g, uri)
-    assert result == "Album"
-
-
-def test_get_label_triplestore_prefers_english_over_no_lang():
-    """English-tagged labels are preferred over untagged ones."""
-    g = Graph()
-    uri = URIRef("http://example.com/Type")
-    mock_bindings = [
-        {"pred": {"value": "http://www.w3.org/2000/01/rdf-schema#label"}, "label": {"value": "untagged"}},
-        {"pred": {"value": "http://www.w3.org/2000/01/rdf-schema#label"}, "label": {"value": "English", "xml:lang": "en"}},
-    ]
-    with patch.object(searchindex._triplestore_session, "post", return_value=_mock_triplestore_response(mock_bindings)):
-        result = get_label(g, uri)
-    assert result == "English"
-
-
-def test_get_label_raises_when_not_in_local_graph_or_triplestore():
-    """ValueError is raised when the URI has no label anywhere."""
-    g = Graph()
-    uri = URIRef("http://example.com/Unknown")
-    with patch.object(searchindex._triplestore_session, "post", return_value=_mock_triplestore_response([])):
-        try:
-            get_label(g, uri)
-            assert False, "Expected ValueError"
-        except ValueError as e:
-            assert "http://example.com/Unknown" in str(e)
+    try:
+        get_label(g, uri)
+        assert False, "Expected ValueError"
+    except ValueError as e:
+        msg = str(e)
+        assert "http://purl.org/ontology/mo/Record" in msg
+        assert "source" in msg.lower()
+        assert "lucos_arachne#371" in msg
 
 
 # ---------------------------------------------------------------------------
-# get_category — category lookup with triplestore fallback
+# get_category — category lookup (local graph only, no triplestore fallback)
 # ---------------------------------------------------------------------------
 
 EOLAS_NS = Namespace("https://eolas.l42.eu/ontology/")
 
 
-def _mock_category_triplestore_response(category_uri=None):
-    """Build a mock SPARQL response for a hasCategory query."""
-    mock_resp = MagicMock()
-    mock_resp.raise_for_status = MagicMock()
-    if category_uri:
-        mock_resp.json.return_value = {
-            "results": {"bindings": [{"category": {"type": "uri", "value": category_uri}}]}
-        }
-    else:
-        mock_resp.json.return_value = {"results": {"bindings": []}}
-    return mock_resp
-
-
 def test_get_category_finds_category_in_local_graph():
-    """Category found via eolas:hasCategory in local graph — no triplestore query."""
+    """Category found via eolas:hasCategory in local graph."""
     g = Graph()
     type_uri = URIRef("http://example.com/Type")
     category_uri = URIRef("https://eolas.l42.eu/ontology/SomeCategory")
     g.add((type_uri, EOLAS_NS.hasCategory, category_uri))
     g.add((category_uri, SKOS.prefLabel, Literal("Some Category")))
-    with patch.object(searchindex._triplestore_session, "post") as mock_post:
-        result = get_category(g, type_uri)
+    result = get_category(g, type_uri)
     assert result == "Some Category"
-    mock_post.assert_not_called()
 
 
-def test_get_category_falls_back_to_triplestore():
-    """Category not in local graph: falls back to SPARQL query for hasCategory."""
+def test_get_category_raises_with_helpful_message_when_not_in_local_graph():
+    """ValueError pointing at the source is raised when category metadata is missing from the local graph."""
     g = Graph()
     type_uri = URIRef("http://purl.org/ontology/mo/Record")
-    category_uri = "https://eolas.l42.eu/ontology/MusicCategory"
-    label_bindings = [
-        {"pred": {"value": "http://www.w3.org/2004/02/skos/core#prefLabel"}, "label": {"value": "Music", "xml:lang": "en"}},
-    ]
-
-    call_count = 0
-    def mock_post_side_effect(url, **kwargs):
-        nonlocal call_count
-        call_count += 1
-        if call_count == 1:
-            # First call: hasCategory lookup
-            return _mock_category_triplestore_response(category_uri)
-        else:
-            # Second call: label lookup for the category URI
-            return _mock_triplestore_response(label_bindings)
-
-    with patch.object(searchindex._triplestore_session, "post", side_effect=mock_post_side_effect):
-        result = get_category(g, type_uri)
-    assert result == "Music"
-    assert call_count == 2
+    try:
+        get_category(g, type_uri)
+        assert False, "Expected ValueError"
+    except ValueError as e:
+        msg = str(e)
+        assert "http://purl.org/ontology/mo/Record" in msg
+        assert "source" in msg.lower()
+        assert "lucos_arachne#371" in msg
 
 
-def test_get_category_raises_when_not_in_local_graph_or_triplestore():
-    """ValueError raised when type has no category mapping anywhere."""
+def test_get_category_raises_when_type_has_no_category():
+    """ValueError raised when type has no eolas:hasCategory mapping in local graph."""
     g = Graph()
     type_uri = URIRef("http://example.com/UnknownType")
-    with patch.object(searchindex._triplestore_session, "post", return_value=_mock_category_triplestore_response(None)):
-        try:
-            get_category(g, type_uri)
-            assert False, "Expected ValueError"
-        except ValueError as e:
-            assert "http://example.com/UnknownType" in str(e)
+    try:
+        get_category(g, type_uri)
+        assert False, "Expected ValueError"
+    except ValueError as e:
+        assert "http://example.com/UnknownType" in str(e)
