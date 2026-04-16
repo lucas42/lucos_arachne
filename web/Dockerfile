@@ -1,4 +1,6 @@
 FROM nginx:1.29.8-alpine
+ARG VERSION
+ENV VERSION=$VERSION
 
 RUN rm /etc/nginx/conf.d/*
 RUN rm /usr/share/nginx/html/*

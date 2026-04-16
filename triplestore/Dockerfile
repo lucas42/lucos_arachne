@@ -1,4 +1,6 @@
 FROM openjdk:22-jdk-slim
+ARG VERSION
+ENV VERSION=$VERSION
 
 RUN apt-get update && apt-get install -y maven gettext-base curl
 

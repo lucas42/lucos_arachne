@@ -1,4 +1,6 @@
 FROM typesense/typesense:30.1
+ARG VERSION
+ENV VERSION=$VERSION
 
 # Use bash explicitly
 SHELL ["/bin/bash", "-c"]

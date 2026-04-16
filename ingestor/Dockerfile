@@ -1,4 +1,6 @@
 FROM lucas42/lucos_scheduled_scripts:2.0.2
+ARG VERSION
+ENV VERSION=$VERSION
 
 RUN echo "15 04 * * * INGEST_STARTUP_DELAY=0 pipenv --quiet run python -u ingest.py" | crontab -
 COPY startup.sh .
