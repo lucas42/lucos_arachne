@@ -79,3 +79,33 @@ def test_merge_raises_on_triplestore_error():
             assert False, "Expected exception not raised"
         except Exception as e:
             assert "500" in str(e)
+
+
+# ---------------------------------------------------------------------------
+# ontology_cache — Music Ontology
+# ---------------------------------------------------------------------------
+
+def test_music_ontology_in_cache():
+    """music_ontology entry is present in ontology_cache with correct graph URI."""
+    assert "music_ontology" in triplestore.ontology_cache
+    graph_uri, filename, content_type = triplestore.ontology_cache["music_ontology"]
+    assert graph_uri == "http://purl.org/ontology/mo/"
+    assert filename == "musicontology.n3"
+    assert content_type == "text/turtle"
+
+
+def test_music_ontology_file_exists():
+    """The cached Music Ontology file exists in the ontologies directory."""
+    graph_uri, filename, content_type = triplestore.ontology_cache["music_ontology"]
+    file_path = os.path.join(triplestore.ONTOLOGIES_DIR, filename)
+    assert os.path.isfile(file_path), f"Missing ontology file: {file_path}"
+
+
+def test_music_ontology_file_contains_record_label():
+    """The Music Ontology file includes a label for mo:Record."""
+    graph_uri, filename, content_type = triplestore.ontology_cache["music_ontology"]
+    file_path = os.path.join(triplestore.ONTOLOGIES_DIR, filename)
+    with open(file_path, encoding="utf-8") as f:
+        content = f.read()
+    assert "mo:Record" in content
+    assert 'rdfs:label "record"' in content
