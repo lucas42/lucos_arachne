@@ -1,4 +1,4 @@
-FROM typesense/typesense:30.1
+FROM typesense/typesense:30.2
 ARG VERSION
 ENV VERSION=$VERSION
 
