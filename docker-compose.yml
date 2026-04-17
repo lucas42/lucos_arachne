@@ -4,7 +4,7 @@ services:
     container_name: lucos_arachne_web
     ports:
       - $PORT:80
-    image: lucas42/lucos_arachne_web
+    image: lucas42/lucos_arachne_web:${VERSION:-latest}
     restart: always
     depends_on:
       triplestore:
@@ -29,7 +29,7 @@ services:
     build:
       context: ./triplestore
     container_name: lucos_arachne_triplestore
-    image: lucas42/lucos_arachne_triplestore
+    image: lucas42/lucos_arachne_triplestore:${VERSION:-latest}
     environment:
       - PORT=3030
       - CLIENT_KEYS
@@ -50,7 +50,7 @@ services:
   ingestor:
     build: ./ingestor
     container_name: lucos_arachne_ingestor
-    image: lucas42/lucos_arachne_ingestor
+    image: lucas42/lucos_arachne_ingestor:${VERSION:-latest}
     environment:
       - PORT=8099
       - LOGANNE_ENDPOINT
@@ -77,7 +77,7 @@ services:
   explore:
     build: explore
     container_name: lucos_arachne_explore
-    image: lucas42/lucos_arachne_explore
+    image: lucas42/lucos_arachne_explore:${VERSION:-latest}
     restart: always
     depends_on:
       triplestore:
@@ -96,7 +96,7 @@ services:
   search:
     build: search
     container_name: lucos_arachne_search
-    image: lucas42/lucos_arachne_search
+    image: lucas42/lucos_arachne_search:${VERSION:-latest}
     environment:
       - TYPESENSE_ADMIN_KEY
       - CLIENT_KEYS
@@ -113,7 +113,7 @@ services:
   mcp:
     build: ./mcp
     container_name: lucos_arachne_mcp
-    image: lucas42/lucos_arachne_mcp
+    image: lucas42/lucos_arachne_mcp:${VERSION:-latest}
     restart: always
     environment:
       - PORT=8200
