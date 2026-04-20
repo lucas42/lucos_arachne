@@ -32,7 +32,7 @@ Three connected changes, in priority order:
 
 Not pursuing: incremental inference, alternative storage engine. Rationale for each is below.
 
-### Conditional refresh (Option 2)
+### Conditional refresh (Option 1)
 
 Before calling `replace_graph_in_triplestore` for a source, hash the incoming payload and compare against the hash stored from the last successful ingest of that source. If unchanged, skip the graph entirely — no `DROP`, no `INSERT`, no inference rebuild triggered from that source.
 
@@ -45,11 +45,11 @@ Before calling `replace_graph_in_triplestore` for a source, hash the incoming pa
 
 The expected steady-state behaviour is: most runs touch zero graphs and incur no TDB2 writes at all. Runs after a real source change touch one or two graphs. This already captures the bulk of the benefit.
 
-### Diff-based ingestion (Option 1)
+### Diff-based ingestion (Option 2)
 
 For sources that do change, replace `DROP GRAPH <g>; INSERT { ... }` with computed `INSERT` and `DELETE` over the delta only. For a source where one triple has changed, this writes two quads instead of rewriting the entire graph.
 
-This is committed *in principle* but may not be implemented if (2) proves sufficient on its own — see "Sequencing and reversibility" below.
+This is committed *in principle* but may not be implemented if (1) proves sufficient on its own — see "Sequencing and reversibility" below.
 
 #### Blank-node handling
 
@@ -89,8 +89,8 @@ lucas42 confirmed on #386 that the expensive `DROP` + rebuild path is reachable 
 
 The redesign does not widen this surface:
 
-- Conditional refresh (Option 2) only affects the cron path; webhook paths are unchanged.
-- Diff-based ingestion (Option 1) similarly only affects the cron path. The worst-case cost of a single diff is bounded by the size of the changed source, which is already bounded by what that source is willing to emit.
+- Conditional refresh (Option 1) only affects the cron path; webhook paths are unchanged.
+- Diff-based ingestion (Option 2) similarly only affects the cron path. The worst-case cost of a single diff is bounded by the size of the changed source, which is already bounded by what that source is willing to emit.
 - Scheduled compaction (Option 3) is internal to the triplestore container and not exposed externally.
 
 Resource exhaustion as a DoS vector against the ingestion pipeline is therefore a non-issue under the current deployment: an attacker would need to already have write access to a source system to cause large diffs, at which point we have bigger problems than TDB2 bloat. If the ingestion endpoint ever gains an externally-triggerable surface (e.g. a "refresh now" webhook on the ingestor itself), this analysis must be revisited — flagging for future ADRs.
@@ -101,7 +101,7 @@ Resource exhaustion as a DoS vector against the ingestion pipeline is therefore 
 
 Rather than rebuilding `urn:lucos:inferred` wholesale whenever any raw graph changes, incrementally propagate raw-graph changes into the inferred graph.
 
-Rejected because the engineering cost is materially disproportionate to the gain. Incremental inference requires provenance tracking (which inferred triple was derived from which combination of raw triples) and deletion propagation through the derivation graph — this is the classical truth-maintenance problem, well-studied and well-known for being hard to get right. The current `compute_inferences()` implementation is ~80 lines and runs in-memory against 227K raw quads in well under a second. Wholesale rebuild on a triggered basis (Option 2's "only rebuild if at least one source changed") already eliminates the common case where we rebuild for no reason. The uncommon case is cheap enough to brute-force.
+Rejected because the engineering cost is materially disproportionate to the gain. Incremental inference requires provenance tracking (which inferred triple was derived from which combination of raw triples) and deletion propagation through the derivation graph — this is the classical truth-maintenance problem, well-studied and well-known for being hard to get right. The current `compute_inferences()` implementation is ~80 lines and runs in-memory against 227K raw quads in well under a second. Wholesale rebuild on a triggered basis (Option 1's "only rebuild if at least one source changed") already eliminates the common case where we rebuild for no reason. The uncommon case is cheap enough to brute-force.
 
 Revisit only if the data scale crosses roughly an order of magnitude (≈2M quads), or if a future reasoning addition produces inferred triple counts that dominate rebuild time. Neither is in sight.
 
@@ -124,7 +124,7 @@ Revisit if (a) Options 2 and 1 ship and TDB2 still produces recurring bloat-driv
 - **The dataset's write volume becomes proportional to its actual rate of change**, not fixed at "full dataset, twice a day". Steady-state tombstone generation drops to near-zero.
 - **Readers stop seeing empty graphs mid-ingest.** Phase 1's single-transaction multi-statement Update means raw graphs are always consistent from a reader's perspective. Phase 2's stale-but-consistent inferred window is a strict improvement on current behaviour.
 - **Blank-node usage becomes explicit architecture, not an accident.** Skolemisation at ingest time is a deliberate choice with documented rationale; today's behaviour (blank nodes in the store, re-minted on every ingest) was not a design choice so much as a consequence of nobody noticing.
-- **`urn:lucos:inferred` rebuilds only when it has to.** Even before Option 1 lands, Option 2 alone eliminates the "nothing changed, still rebuild inference" case.
+- **`urn:lucos:inferred` rebuilds only when it has to.** Even before Option 2 lands, Option 1 alone eliminates the "nothing changed, still rebuild inference" case.
 - **Scheduled compaction remains in place as a defensive measure** rather than as the primary fix, which is a healthier operational posture (compaction is not compensating for a known-bad pattern, just absorbing incidental churn).
 
 ### Negative
@@ -144,14 +144,14 @@ Revisit if (a) Options 2 and 1 ship and TDB2 still produces recurring bloat-driv
 
 Implementation will land as separate issues, each independently deliverable and reviewable. Issues will be filed immediately after this ADR merges.
 
-- **Conditional refresh (Option 2)** — new issue.
-- **Diff-based ingestion with blank-node Skolemisation (Option 1)** — new issue, blocked on Option 2 shipping and on an assessment of whether it is still worth building.
+- **Conditional refresh (Option 1)** — new issue.
+- **Diff-based ingestion with blank-node Skolemisation (Option 2)** — new issue, blocked on Option 1 shipping and on an assessment of whether it is still worth building.
 - **Scheduled compaction (Option 3)** — already tracked in #389.
 
 ## Sequencing and reversibility
 
-Option 2 is a strict addition: a fast path before the existing code. If it breaks, removing the hash check restores current behaviour with no data loss. Hash state in `urn:lucos:ingestor-metadata` can be dropped at any time without affecting correctness — the next ingest will simply re-do every source once.
+Option 1 is a strict addition: a fast path before the existing code. If it breaks, removing the hash check restores current behaviour with no data loss. Hash state in `urn:lucos:ingestor-metadata` can be dropped at any time without affecting correctness — the next ingest will simply re-do every source once.
 
-Option 1 is a more invasive change to `replace_graph_in_triplestore`. The ADR's position is that we should ship Option 2, measure the residual churn, and then decide whether Option 1's complexity is still worth the remaining gain. A likely outcome is that Option 2 alone reduces churn by enough (plausibly >90%, given how infrequently most sources change) that Option 1 becomes optional.
+Option 2 is a more invasive change to `replace_graph_in_triplestore`. The ADR's position is that we should ship Option 1, measure the residual churn, and then decide whether Option 2's complexity is still worth the remaining gain. A likely outcome is that Option 1 alone reduces churn by enough (plausibly >90%, given how infrequently most sources change) that Option 2 becomes optional.
 
 Option 3 (#389) can ship independently of both and is safe to do so before, during, or after the other work.
