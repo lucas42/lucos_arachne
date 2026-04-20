@@ -11,6 +11,7 @@ live_systems = {
 	"lucos_eolas": "https://eolas.l42.eu/metadata/all/data/",
 	"lucos_contacts": "https://contacts.l42.eu/people/all",
 	"lucos_media_metadata_api": "https://media-api.l42.eu/v2/export",
+	"lucos_configy": "https://configy.l42.eu/all",
 }
 
 # 3rd party ontologies: name → (graph_uri, local_filename, content_type)
