@@ -109,3 +109,70 @@ def test_music_ontology_file_contains_record_label():
         content = f.read()
     assert "mo:Record" in content
     assert 'rdfs:label "record"' in content
+
+
+# ---------------------------------------------------------------------------
+# get_source_hash / set_source_hash
+# ---------------------------------------------------------------------------
+
+def _sparql_response(bindings):
+    resp = MagicMock()
+    resp.ok = True
+    resp.raise_for_status = MagicMock()
+    resp.json.return_value = {"results": {"bindings": bindings}}
+    return resp
+
+
+def test_get_source_hash_returns_none_when_missing():
+    """get_source_hash returns None when the metadata graph has no entry."""
+    with patch.object(triplestore.session, "post", return_value=_sparql_response([])):
+        result = triplestore.get_source_hash("https://example.com/graph")
+    assert result is None
+
+
+def test_get_source_hash_returns_stored_value():
+    """get_source_hash returns the hash string stored in the triplestore."""
+    binding = {"hash": {"value": "sha256:abc123"}}
+    with patch.object(triplestore.session, "post", return_value=_sparql_response([binding])):
+        result = triplestore.get_source_hash("https://example.com/graph")
+    assert result == "sha256:abc123"
+
+
+def test_get_source_hash_queries_metadata_graph():
+    """get_source_hash queries the correct metadata graph and predicate."""
+    with patch.object(triplestore.session, "post", return_value=_sparql_response([])) as mock_post:
+        triplestore.get_source_hash("https://example.com/graph")
+    query = mock_post.call_args.kwargs["data"]["query"]
+    assert triplestore.METADATA_GRAPH in query
+    assert triplestore.LAST_PAYLOAD_HASH_PRED in query
+    assert "https://example.com/graph" in query
+
+
+def test_set_source_hash_sends_delete_and_insert():
+    """set_source_hash issues a SPARQL DELETE + INSERT update."""
+    with patch.object(triplestore.session, "post", return_value=_mock_ok_response()) as mock_post:
+        triplestore.set_source_hash("https://example.com/graph", "sha256:deadbeef")
+    assert mock_post.call_count == 1
+    sparql = mock_post.call_args.kwargs["data"]
+    assert "DELETE" in sparql
+    assert "INSERT" in sparql
+    assert triplestore.METADATA_GRAPH in sparql
+    assert "sha256:deadbeef" in sparql
+    assert "https://example.com/graph" in sparql
+
+
+def test_set_source_hash_targets_update_endpoint():
+    """set_source_hash posts to the SPARQL update endpoint."""
+    with patch.object(triplestore.session, "post", return_value=_mock_ok_response()) as mock_post:
+        triplestore.set_source_hash("https://example.com/graph", "sha256:deadbeef")
+    url = mock_post.call_args.args[0]
+    assert url == "http://triplestore:3030/raw_arachne/update"
+
+
+# ---------------------------------------------------------------------------
+# metadata graph allow-list
+# ---------------------------------------------------------------------------
+
+def test_metadata_graph_constant_defined():
+    """METADATA_GRAPH constant exists and has the correct URI."""
+    assert triplestore.METADATA_GRAPH == "urn:lucos:ingestor-metadata"

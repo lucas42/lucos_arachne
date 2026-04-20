@@ -104,8 +104,46 @@ def merge_items_in_triplestore(source_uri, target_uri, graph_uri):
 
 
 INFERRED_GRAPH = "urn:lucos:inferred"
+METADATA_GRAPH = "urn:lucos:ingestor-metadata"
+LAST_PAYLOAD_HASH_PRED = "urn:lucos:ingestor:lastPayloadHash"
 OWL_TRANSITIVE = "http://www.w3.org/2002/07/owl#TransitiveProperty"
 OWL_INVERSE_OF  = "http://www.w3.org/2002/07/owl#inverseOf"
+
+def get_source_hash(graph_uri):
+	"""Return the stored SHA-256 hash for graph_uri, or None if not recorded."""
+	resp = session.post(
+		"http://triplestore:3030/raw_arachne/sparql",
+		headers={"Accept": "application/json"},
+		data={"query": (
+			f"SELECT ?hash WHERE {{"
+			f" GRAPH <{METADATA_GRAPH}> {{"
+			f" <{graph_uri}> <{LAST_PAYLOAD_HASH_PRED}> ?hash"
+			f" }} }}"
+		)},
+	)
+	resp.raise_for_status()
+	bindings = resp.json()["results"]["bindings"]
+	return bindings[0]["hash"]["value"] if bindings else None
+
+
+def set_source_hash(graph_uri, hash_str):
+	"""Write (or replace) the hash for graph_uri in the metadata graph."""
+	resp = session.post(
+		"http://triplestore:3030/raw_arachne/update",
+		headers={"Content-Type": "application/sparql-update"},
+		data=(
+			f'DELETE WHERE {{'
+			f' GRAPH <{METADATA_GRAPH}> {{'
+			f' <{graph_uri}> <{LAST_PAYLOAD_HASH_PRED}> ?old'
+			f' }} }} ;\n'
+			f'INSERT DATA {{'
+			f' GRAPH <{METADATA_GRAPH}> {{'
+			f' <{graph_uri}> <{LAST_PAYLOAD_HASH_PRED}> "{hash_str}"'
+			f' }} }}'
+		),
+	)
+	resp.raise_for_status()
+
 
 def _sparql_pairs(prop):
 	"""Return a set of (subject, object) pairs for prop, excluding the inferred graph."""
