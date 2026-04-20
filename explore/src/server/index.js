@@ -14,15 +14,24 @@ app.get('/_info', catchErrors(async (req, res) => {
 	const search = checkSearch();
 	const ingestor = checkIngestor();
 	const triplestore = checkTriplestore();
-	const [searchResult, ingestorResult, triplestoreResult] = await Promise.all([search, ingestor, triplestore]);
+	const sparqlLatency = checkSparqlLatency();
+	const [searchResult, ingestorResult, triplestoreResult, sparqlLatencyResult] = await Promise.all([search, ingestor, triplestore, sparqlLatency]);
+	const metrics = {};
+	if (sparqlLatencyResult.latencyMs !== null) {
+		metrics['sparql-query-latency-ms'] = {
+			value: sparqlLatencyResult.latencyMs,
+			techDetail: 'Wall-clock time in ms for a SELECT COUNT(*) query against the arachne SPARQL endpoint',
+		};
+	}
 	res.json({
 		system: 'lucos_arachne',
 		checks: {
 			search: searchResult,
 			ingestor: ingestorResult,
 			triplestore: triplestoreResult,
+			'sparql-latency': sparqlLatencyResult.check,
 		},
-		metrics: {},
+		metrics,
 		ci: { circle: 'gh/lucas42/lucos_arachne' },
 		network_only: true,
 		title: 'Arachne',
@@ -85,6 +94,36 @@ async function checkTriplestore() {
 		return { ok: true, techDetail, failThreshold };
 	} catch (err) {
 		return { ok: false, techDetail, failThreshold, debug: err.message };
+	}
+}
+
+
+async function checkSparqlLatency() {
+	const techDetail = 'SELECT COUNT(*) query against the arachne endpoint to measure SPARQL query latency';
+	const failThreshold = 3;
+	const WARN_MS = 400;
+	const start = Date.now();
+	try {
+		const body = new URLSearchParams({ query: 'SELECT (COUNT(*) AS ?n) WHERE { ?s a ?t }' });
+		const response = await fetch('http://triplestore:3030/arachne/sparql', {
+			method: 'POST',
+			headers: {
+				'Content-Type': 'application/x-www-form-urlencoded',
+				'Accept': 'application/sparql-results+json',
+				'Authorization': `Basic ${Buffer.from(`lucos_arachne:${process.env.KEY_LUCOS_ARACHNE}`).toString('base64')}`,
+			},
+			body: body.toString(),
+			signal: AbortSignal.timeout(450),
+		});
+		const latencyMs = Date.now() - start;
+		if (!response.ok) return { check: { ok: false, techDetail, failThreshold, debug: `HTTP ${response.status}` }, latencyMs: null };
+		const ok = latencyMs < WARN_MS;
+		return {
+			check: { ok, techDetail, failThreshold, ...(ok ? {} : { debug: `${latencyMs}ms` }) },
+			latencyMs,
+		};
+	} catch (err) {
+		return { check: { ok: false, techDetail, failThreshold, debug: err.message }, latencyMs: null };
 	}
 }
 
