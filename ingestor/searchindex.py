@@ -20,6 +20,7 @@ IGNORE_TYPES = [
 	"http://www.w3.org/2002/07/owl#Ontology",
 	"http://www.w3.org/2002/07/owl#TransitiveProperty",
 	"https://eolas.l42.eu/ontology/Category",
+	"http://www.w3.org/1999/02/22-rdf-syntax-ns#Property",
 ]
 
 KEY_LUCOS_ARACHNE = os.environ.get("KEY_LUCOS_ARACHNE")
