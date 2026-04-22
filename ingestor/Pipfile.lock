@@ -191,29 +191,29 @@
         },
         "idna": {
             "hashes": [
-                "sha256:771a87f49d9defaf64091e6e6fe9c18d4833f140bd19464795bc32d966ca37ea",
-                "sha256:795dafcc9c04ed0c1fb032c2aa73654d8e8c5023a7df64a53f39190ada629902"
+                "sha256:60ffaa1858fac94c9c124728c24fcde8160f3fb4a7f79aa8cdd33a9d1af60a67",
+                "sha256:724e9952cc9e2bd7550ea784adb098d837ab5267ef67a1ab9cf7846bdbdd8254"
             ],
             "markers": "python_version >= '3.8'",
-            "version": "==3.11"
+            "version": "==3.12"
         },
         "lucos-loganne-pythonclient": {
             "hashes": [
-                "sha256:0f24a41d1b323c87df7522015970437f020ab210ec8f7db68d8eeeabf59aaac2",
-                "sha256:6bb416871e2eea7526b1be66035a8b7c2276307c7a542abd4d3ccecd55ab8af2"
+                "sha256:7384af5b741be670d6826a73c1b748609f56ef2d8cea5477d3219937f28b1977",
+                "sha256:7be37bcfe6d410fc7c85def6ff4472f1d776cd155b1d1200b2774bf77f988644"
             ],
             "index": "pypi",
             "markers": "python_version >= '3.8'",
-            "version": "==1.0.30"
+            "version": "==1.0.31"
         },
         "lucos-schedule-tracker-pythonclient": {
             "hashes": [
-                "sha256:2792aaf9d02a1bbc43dbc9aff47596a49fc068e6a0022e4ee0a3c12ebb98e2ab",
-                "sha256:abfa1f833e00c6d7f07c5b6aa23514f4342681957b55a8115e4deb7931c42908"
+                "sha256:22586b7b99a3e493f27893e759f30a89a62b169a92a81ebe9e86105801b54eea",
+                "sha256:a6d7552345d8eaf0341b9339afc561db6d9d80516662c3ce68f723c9783e9e5c"
             ],
             "index": "pypi",
             "markers": "python_version >= '3.8'",
-            "version": "==1.0.25"
+            "version": "==1.0.26"
         },
         "pyparsing": {
             "hashes": [
