@@ -24,11 +24,11 @@
         },
         "certifi": {
             "hashes": [
-                "sha256:027692e4402ad994f1c42e52a4997a9763c646b73e4096e4d5d6db8af1d6f0fa",
-                "sha256:e887ab5cee78ea814d3472169153c2d12cd43b14bd03329a39a9c6e2e80bfba7"
+                "sha256:3cb2210c8f88ba2318d29b0388d1023c8492ff72ecdde4ebdaddbb13a31b1c4a",
+                "sha256:8d455352a37b71bf76a79caa83a3d6c25afee4a385d632127b6afb3963f1c580"
             ],
             "markers": "python_version >= '3.7'",
-            "version": "==2026.2.25"
+            "version": "==2026.4.22"
         },
         "charset-normalizer": {
             "hashes": [
@@ -191,29 +191,29 @@
         },
         "idna": {
             "hashes": [
-                "sha256:60ffaa1858fac94c9c124728c24fcde8160f3fb4a7f79aa8cdd33a9d1af60a67",
-                "sha256:724e9952cc9e2bd7550ea784adb098d837ab5267ef67a1ab9cf7846bdbdd8254"
+                "sha256:585ea8fe5d69b9181ec1afba340451fba6ba764af97026f92a91d4eef164a242",
+                "sha256:892ea0cde124a99ce773decba204c5552b69c3c67ffd5f232eb7696135bc8bb3"
             ],
             "markers": "python_version >= '3.8'",
-            "version": "==3.12"
+            "version": "==3.13"
         },
         "lucos-loganne-pythonclient": {
             "hashes": [
-                "sha256:7384af5b741be670d6826a73c1b748609f56ef2d8cea5477d3219937f28b1977",
-                "sha256:7be37bcfe6d410fc7c85def6ff4472f1d776cd155b1d1200b2774bf77f988644"
+                "sha256:e9fd5cd5ed6b43feed038958a333917163200626c5ce86367f70d6bd59e8aeb6",
+                "sha256:f45e3f393a19a3787eed274b8fbf626acb9d4852128e1c359fd97e07be435901"
             ],
             "index": "pypi",
             "markers": "python_version >= '3.8'",
-            "version": "==1.0.31"
+            "version": "==1.0.32"
         },
         "lucos-schedule-tracker-pythonclient": {
             "hashes": [
-                "sha256:22586b7b99a3e493f27893e759f30a89a62b169a92a81ebe9e86105801b54eea",
-                "sha256:a6d7552345d8eaf0341b9339afc561db6d9d80516662c3ce68f723c9783e9e5c"
+                "sha256:9b5c52bdcfd9726d6f7f19b22164990e8dd4b0aaca20e394b45733cef872ab60",
+                "sha256:cd25e50a0134edc98fe5c136a368f9703998f3ab5d81f7547263a02be6785d78"
             ],
             "index": "pypi",
             "markers": "python_version >= '3.8'",
-            "version": "==1.0.26"
+            "version": "==1.0.27"
         },
         "pyparsing": {
             "hashes": [
