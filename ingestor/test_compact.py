@@ -84,8 +84,15 @@ def test_compaction_reports_success_to_schedule_tracker():
     with patch("requests.post", return_value=_ok_response()):
         compact.run_compaction()
     _update_schedule_tracker_mock.assert_called_once_with(
-        success=True, system=compact.SYSTEM
+        success=True, system=compact.SYSTEM, frequency=compact.FREQUENCY_SECONDS
     )
+
+
+def test_compaction_passes_weekly_frequency_to_schedule_tracker():
+    """The compaction job is weekly; FREQUENCY_SECONDS must give a >7-day alert
+    threshold (server-side multiplier × 3) so a missed Sunday run alerts within
+    a sensible window. 3 days × 3 = 9 days is the minimum acceptable."""
+    assert compact.FREQUENCY_SECONDS >= 3 * 24 * 60 * 60
 
 
 def test_compaction_emits_loganne_event():

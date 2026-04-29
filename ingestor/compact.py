@@ -16,6 +16,12 @@ except KeyError:
 
 SYSTEM = "lucos_arachne_compaction"
 
+# Compaction is scheduled weekly via cron (Sundays). Schedule-tracker
+# multiplies frequency by 3 server-side to derive its alert threshold,
+# so passing 3 days here gives a 9-day threshold — one weekly run plus
+# 2 days of slack before alerting on a missed compaction.
+FREQUENCY_SECONDS = 3 * 24 * 60 * 60
+
 
 def run_compaction():
 	print("Starting TDB2 compaction on raw_arachne...", flush=True)
@@ -27,7 +33,7 @@ def run_compaction():
 	resp.raise_for_status()
 	print("Compaction complete.", flush=True)
 	updateLoganne(type="tripleStoreCompaction", humanReadable="TDB2 triplestore compacted", url=BASE_URL)
-	updateScheduleTracker(success=True, system=SYSTEM)
+	updateScheduleTracker(success=True, system=SYSTEM, frequency=FREQUENCY_SECONDS)
 
 
 if __name__ == "__main__":
@@ -36,5 +42,5 @@ if __name__ == "__main__":
 	except Exception as e:
 		error_message = f"Compaction failed: {e}"
 		print(error_message, flush=True)
-		updateScheduleTracker(success=False, system=SYSTEM, message=error_message)
+		updateScheduleTracker(success=False, system=SYSTEM, message=error_message, frequency=FREQUENCY_SECONDS)
 		sys.exit(error_message)
