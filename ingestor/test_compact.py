@@ -88,11 +88,13 @@ def test_compaction_reports_success_to_schedule_tracker():
     )
 
 
-def test_compaction_passes_weekly_frequency_to_schedule_tracker():
-    """The compaction job is weekly; FREQUENCY_SECONDS must give a >7-day alert
-    threshold (server-side multiplier × 3) so a missed Sunday run alerts within
-    a sensible window. 3 days × 3 = 9 days is the minimum acceptable."""
-    assert compact.FREQUENCY_SECONDS >= 3 * 24 * 60 * 60
+def test_compaction_frequency_matches_weekly_cron():
+    """FREQUENCY_SECONDS must match the cron interval. Compaction runs weekly
+    (Sundays 03:30 UTC), so this should be one week in seconds. Schedule-tracker
+    derives its own alert threshold from the value we pass — we report our true
+    cadence and let it decide rather than fudging frequency to chase a desired
+    threshold."""
+    assert compact.FREQUENCY_SECONDS == 7 * 24 * 60 * 60
 
 
 def test_compaction_emits_loganne_event():

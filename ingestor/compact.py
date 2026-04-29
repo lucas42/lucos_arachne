@@ -16,11 +16,10 @@ except KeyError:
 
 SYSTEM = "lucos_arachne_compaction"
 
-# Compaction is scheduled weekly via cron (Sundays). Schedule-tracker
-# multiplies frequency by 3 server-side to derive its alert threshold,
-# so passing 3 days here gives a 9-day threshold — one weekly run plus
-# 2 days of slack before alerting on a missed compaction.
-FREQUENCY_SECONDS = 3 * 24 * 60 * 60
+# Compaction runs weekly via cron (Sundays at 03:30 UTC). Pass the actual
+# schedule interval to schedule-tracker; it derives its alert threshold from
+# this value.
+FREQUENCY_SECONDS = 7 * 24 * 60 * 60
 
 
 def run_compaction():
