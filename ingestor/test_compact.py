@@ -131,3 +131,17 @@ def test_compaction_does_not_emit_loganne_on_failure():
         except Exception:
             pass
     _update_loganne_mock.assert_not_called()
+
+
+def test_compaction_main_reports_failure_to_schedule_tracker():
+    """When run_compaction raises, main() reports success=False with frequency."""
+    _reset_mocks()
+    with patch("requests.post", return_value=_error_response()):
+        try:
+            compact.main()
+        except SystemExit:
+            pass
+    _update_schedule_tracker_mock.assert_called_once()
+    kwargs = _update_schedule_tracker_mock.call_args.kwargs
+    assert kwargs.get("success") is False
+    assert kwargs.get("frequency") == compact.FREQUENCY_SECONDS
