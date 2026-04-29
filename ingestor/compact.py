@@ -35,7 +35,7 @@ def run_compaction():
 	updateScheduleTracker(success=True, system=SYSTEM, frequency=FREQUENCY_SECONDS)
 
 
-if __name__ == "__main__":
+def main():
 	try:
 		run_compaction()
 	except Exception as e:
@@ -43,3 +43,7 @@ if __name__ == "__main__":
 		print(error_message, flush=True)
 		updateScheduleTracker(success=False, system=SYSTEM, message=error_message, frequency=FREQUENCY_SECONDS)
 		sys.exit(error_message)
+
+
+if __name__ == "__main__":
+	main()
