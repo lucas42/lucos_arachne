@@ -184,7 +184,7 @@ app.get('/item', catchErrors(async (req, res) => {
 			OPTIONAL { ?object skos:prefLabel ?objectLabel . }
 			OPTIONAL { ?object rdfs:label ?objectLabelRdfs . }
 		}
-		ORDER BY ?predicateLabel
+		ORDER BY COALESCE(?predicateLabel, ?predicateLabelRdfs)
 		LIMIT 1000
 		`,
 	})
