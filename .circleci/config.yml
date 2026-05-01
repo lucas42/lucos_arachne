@@ -16,17 +16,30 @@ jobs:
       - run:
           name: Run ingestor tests
           command: cd ingestor && pytest
+  test-explore:
+    docker:
+      - image: cimg/node:22.14
+    steps:
+      - checkout
+      - run:
+          name: Install explore dependencies
+          command: cd explore && npm ci
+      - run:
+          name: Run explore tests
+          command: cd explore && npm test
 workflows:
   version: 2
   build-deploy:
     jobs:
       - test
+      - test-explore
       - lucos/build:
           serial-group: << pipeline.project.slug >>/build
       - lucos/deploy-avalon:
           serial-group: deploy-avalon
           requires:
             - test
+            - test-explore
             - lucos/build
           filters:
             branches:

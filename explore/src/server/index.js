@@ -2,6 +2,7 @@ import express from 'express';
 import net from 'net';
 import rateLimit from 'express-rate-limit';
 import { middleware as authMiddleware } from './auth.js';
+import { processBindings } from './processBindings.js';
 
 const app = express();
 app.auth = authMiddleware;
@@ -202,67 +203,7 @@ app.get('/item', catchErrors(async (req, res) => {
 	if (!response.ok) {
 		throw new Error(`Recieved ${response.status} error from sparql endpoint: ${data["message"]}`);
 	}
-	// Pick the best available label value from two SPARQL bindings.
-	// Prefers skos:prefLabel over rdfs:label; within each, prefers @en or no language tag.
-	function getBestLabelValue(prefLabelBinding, rdfsLabelBinding) {
-		const candidates = [prefLabelBinding, rdfsLabelBinding].filter(Boolean);
-		const enCandidate = candidates.find(b => !b['xml:lang'] || b['xml:lang'] === 'en');
-		return (enCandidate || candidates[0] || null)?.value || null;
-	}
-
-	let prefLabel = null;
-	let predicates = {};
-	let types = [];
-	let wikipediaLink = null;
-	data.results.bindings.forEach(rel => {
-		// Store a single prefLabel to use as title
-		if (rel.predicate.value == 'http://www.w3.org/2004/02/skos/core#prefLabel') {
-			prefLabel = rel.object.value;
-			return;
-		}
-		// Store a list of types (limited to only types with a label)
-		if (rel.predicate.value == 'http://www.w3.org/1999/02/22-rdf-syntax-ns#type') {
-			const typeLabel = getBestLabelValue(rel.objectLabel, rel.objectLabelRdfs);
-			if (typeLabel) types.push(typeLabel);
-			return;
-		}
-		if (rel.predicate.value == 'http://www.w3.org/2002/07/owl#sameAs' && rel.object.value.startsWith('http://dbpedia.org/resource/')) {
-			wikipediaLink = rel.object.value.replace('http://dbpedia.org/resource/', 'https://en.wikipedia.org/wiki/');
-		}
-		const predicateLabelValue = getBestLabelValue(rel.predicateLabel, rel.predicateLabelRdfs);
-		if (!predicateLabelValue) return;
-		if (rel.object.type == 'bnode') return; // Ignore bnodes for now
-		if (!(rel.predicate.value in predicates)) predicates[rel.predicate.value] = {
-			label: predicateLabelValue,
-			type: rel.object.type,
-			values: [],
-		};
-
-		let value = null;
-		switch (rel.object.type) {
-			case 'literal':
-				value = {
-					label: rel.object.value || 'unknown',
-				};
-				break;
-			case 'uri':
-				value = {
-					uri: rel.object.value,
-					label: getBestLabelValue(rel.objectLabel, rel.objectLabelRdfs) || rel.object.value || 'unknown',
-				};
-				break;
-			default:
-				throw new Error(`Can't render object type ${rel.object.type}`);
-		}
-		predicates[rel.predicate.value].values.push(value);
-	});
-
-	// Sort the values in each predicate by label
-	Object.values(predicates).forEach(predicate => {
-		predicate.values.sort((a, b) =>
-			a.label.replace(/\W/g, '').localeCompare(b.label.replace(/\W/g, '')
-		));
-	});
+	const { prefLabel, types, predicates, wikipediaLink } = processBindings(data.results.bindings);
 	res.render('item', {
 		uri,
 		types,
