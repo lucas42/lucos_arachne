@@ -174,14 +174,17 @@ app.get('/item', catchErrors(async (req, res) => {
 	const requestBody = new URLSearchParams({
 		query: `
 		PREFIX skos: <http://www.w3.org/2004/02/skos/core#>
-		SELECT ?predicate ?predicateLabel ?object ?objectLabel
+		PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+		SELECT ?predicate ?predicateLabel ?predicateLabelRdfs ?object ?objectLabel ?objectLabelRdfs
 		WHERE {
 			BIND(<${uri}> AS ?subject)
 			?subject ?predicate ?object .
 			OPTIONAL { ?predicate skos:prefLabel ?predicateLabel }.
+			OPTIONAL { ?predicate rdfs:label ?predicateLabelRdfs }.
 			OPTIONAL { ?object skos:prefLabel ?objectLabel . }
+			OPTIONAL { ?object rdfs:label ?objectLabelRdfs . }
 		}
-		ORDER BY ?predicateLabel
+		ORDER BY COALESCE(?predicateLabel, ?predicateLabelRdfs)
 		LIMIT 1000
 		`,
 	})
@@ -199,6 +202,14 @@ app.get('/item', catchErrors(async (req, res) => {
 	if (!response.ok) {
 		throw new Error(`Recieved ${response.status} error from sparql endpoint: ${data["message"]}`);
 	}
+	// Pick the best available label value from two SPARQL bindings.
+	// Prefers skos:prefLabel over rdfs:label; within each, prefers @en or no language tag.
+	function getBestLabelValue(prefLabelBinding, rdfsLabelBinding) {
+		const candidates = [prefLabelBinding, rdfsLabelBinding].filter(Boolean);
+		const enCandidate = candidates.find(b => !b['xml:lang'] || b['xml:lang'] === 'en');
+		return (enCandidate || candidates[0] || null)?.value || null;
+	}
+
 	let prefLabel = null;
 	let predicates = {};
 	let types = [];
@@ -209,21 +220,20 @@ app.get('/item', catchErrors(async (req, res) => {
 			prefLabel = rel.object.value;
 			return;
 		}
-		// Store a lists of types (limited to only types with a label)
-		if (rel.predicate.value == 'http://www.w3.org/1999/02/22-rdf-syntax-ns#type' && rel.objectLabel) {
-			// Only store labels in English or don't have a lang specified
-			if (!rel.objectLabel['xml:lang'] || rel.objectLabel['xml:lang'] == 'en') {
-				types.push(rel.objectLabel.value);
-			}
+		// Store a list of types (limited to only types with a label)
+		if (rel.predicate.value == 'http://www.w3.org/1999/02/22-rdf-syntax-ns#type') {
+			const typeLabel = getBestLabelValue(rel.objectLabel, rel.objectLabelRdfs);
+			if (typeLabel) types.push(typeLabel);
 			return;
 		}
 		if (rel.predicate.value == 'http://www.w3.org/2002/07/owl#sameAs' && rel.object.value.startsWith('http://dbpedia.org/resource/')) {
 			wikipediaLink = rel.object.value.replace('http://dbpedia.org/resource/', 'https://en.wikipedia.org/wiki/');
 		}
-		if (!rel.predicateLabel) return;
+		const predicateLabelValue = getBestLabelValue(rel.predicateLabel, rel.predicateLabelRdfs);
+		if (!predicateLabelValue) return;
 		if (rel.object.type == 'bnode') return; // Ignore bnodes for now
 		if (!(rel.predicate.value in predicates)) predicates[rel.predicate.value] = {
-			label: rel.predicateLabel?.value,
+			label: predicateLabelValue,
 			type: rel.object.type,
 			values: [],
 		};
@@ -238,7 +248,7 @@ app.get('/item', catchErrors(async (req, res) => {
 			case 'uri':
 				value = {
 					uri: rel.object.value,
-					label: rel.objectLabel?.value || rel.object.value || 'unknown',
+					label: getBestLabelValue(rel.objectLabel, rel.objectLabelRdfs) || rel.object.value || 'unknown',
 				};
 				break;
 			default:
