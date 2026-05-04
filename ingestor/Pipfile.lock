@@ -199,21 +199,21 @@
         },
         "lucos-loganne-pythonclient": {
             "hashes": [
-                "sha256:b257052b16dca3efdbbdcdecf5f6922c89b19781a77ee33038a9ea37ecff1d84",
-                "sha256:bb814c2a5bbf8e47e4ad21fab3baedf3513efae1388621a3442fd626b52e6962"
+                "sha256:110e59ef90769e95f7b8824a4c0495b125849ae8c3d349b772a9502d8c885e2d",
+                "sha256:754a139db631d6c7003aea95c6cf374640492661f20f3a454cc917ebe246a856"
             ],
             "index": "pypi",
             "markers": "python_version >= '3.8'",
-            "version": "==1.0.35"
+            "version": "==1.0.36"
         },
         "lucos-schedule-tracker-pythonclient": {
             "hashes": [
-                "sha256:2bebf26bbaaa36c25a14b45fd19660e19d76189be38e52f317bbcf49c62fee12",
-                "sha256:99711d0c1538c678c37684340d3721104d9b528b8d153a5b9e7b6bc59b7ca512"
+                "sha256:2dd0ba0a29348b5f40e44f58c7c0aeb579b81b034fc34144b97f9e7cc8058522",
+                "sha256:8f753b9cfd37c0942a82bb5795bdebc883e948e5fe989f0deae6c539525e220f"
             ],
             "index": "pypi",
             "markers": "python_version >= '3.8'",
-            "version": "==1.0.30"
+            "version": "==1.0.31"
         },
         "pyparsing": {
             "hashes": [
