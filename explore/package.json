@@ -30,11 +30,12 @@
     "webpack-cli": "^7.0.2"
   },
   "overrides": {
+    "dompurify": ">=3.3.2",
     "folder-hash": {
       "minimatch": "^7.4.7"
     },
+    "ip-address": ">=10.1.1",
     "minimatch": "^5.1.7",
-    "serialize-javascript": ">=7.0.3",
-    "dompurify": ">=3.3.2"
+    "serialize-javascript": ">=7.0.3"
   }
 }
