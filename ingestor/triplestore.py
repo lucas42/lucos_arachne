@@ -1,5 +1,7 @@
 import os, sys
 import requests
+from rdflib import BNode, Graph
+from skolemise import skolemise_graph
 
 KEY_LUCOS_ARACHNE = os.environ.get("KEY_LUCOS_ARACHNE")
 
@@ -243,6 +245,119 @@ def compute_inferences():
 	turtle_content = "\n".join(inferred_lines)
 	print(f"Writing {len(inferred_lines)} total inferred triple{'s' if len(inferred_lines) != 1 else ''} to <{INFERRED_GRAPH}>")
 	replace_graph_in_triplestore(INFERRED_GRAPH, turtle_content, "text/turtle")
+
+
+def _content_type_to_rdflib_format(content_type: str) -> str:
+	"""Map an HTTP content-type value to the corresponding rdflib format name."""
+	ct = content_type.split(";")[0].strip().lower()
+	mapping = {
+		"application/rdf+xml": "xml",
+		"text/turtle": "turtle",
+		"application/n-triples": "nt",
+		"text/n3": "n3",
+		"application/n-quads": "nquads",
+	}
+	return mapping.get(ct, "turtle")
+
+
+def execute_sparql_update(sparql_update: str):
+	"""Execute a SPARQL Update string against the raw_arachne dataset."""
+	resp = session.post(
+		"http://triplestore:3030/raw_arachne/update",
+		headers={"Content-Type": "application/sparql-update"},
+		data=sparql_update,
+	)
+	resp.raise_for_status()
+
+
+def diff_graph_in_triplestore(graph_uri: str, new_content: str, content_type: str) -> str | None:
+	"""
+	Compute a SPARQL Update fragment to bring the named graph at *graph_uri* from
+	its current triplestore state to the state described by *new_content*.
+
+	Steps:
+	1. Parse *new_content* as an RDF graph using rdflib.
+	2. Skolemise blank nodes in the incoming graph.
+	3. Fetch the current graph from the triplestore via a CONSTRUCT query.
+	4. Compute ``to_insert = new − old`` and ``to_delete = old − new`` as set
+	   differences.
+	5. Build and return a SPARQL Update fragment, or ``None`` if there are no
+	   changes.
+
+	Migration case: if the current triplestore graph still contains blank nodes
+	(i.e. the graph was written before Skolemisation was introduced), the function
+	returns a ``DELETE WHERE { … } ; INSERT DATA { … }`` fragment that purges the
+	blank nodes and replaces them with the Skolemised content in a single atomic
+	transaction.
+	"""
+	# 1 + 2. Parse incoming content and Skolemise
+	rdflib_format = _content_type_to_rdflib_format(content_type)
+	new_graph = Graph()
+	new_graph.parse(data=new_content, format=rdflib_format)
+	new_graph = skolemise_graph(new_graph)
+
+	# 3. Fetch current graph from the triplestore
+	construct_resp = session.post(
+		"http://triplestore:3030/raw_arachne/sparql",
+		headers={"Accept": "application/n-triples"},
+		data={"query": f"CONSTRUCT {{ ?s ?p ?o }} WHERE {{ GRAPH <{graph_uri}> {{ ?s ?p ?o }} }}"},
+	)
+	construct_resp.raise_for_status()
+
+	old_graph = Graph()
+	raw_nt = construct_resp.text.strip()
+	if raw_nt:
+		old_graph.parse(data=raw_nt, format="nt")
+
+	# Migration case: if the old graph contains blank nodes, we cannot use
+	# DELETE DATA (SPARQL forbids blank nodes there).  Use DELETE WHERE to wipe
+	# all triples and re-insert the Skolemised content atomically.
+	old_has_bnodes = any(
+		isinstance(s, BNode) or isinstance(o, BNode) for s, _, o in old_graph
+	)
+	if old_has_bnodes:
+		print(
+			f"Graph <{graph_uri}> contains blank nodes — migrating to Skolem URIs "
+			f"({len(old_graph)} triples old → {len(new_graph)} triples new)"
+		)
+		parts = [f"DELETE WHERE {{ GRAPH <{graph_uri}> {{ ?s ?p ?o }} }}"]
+		if new_graph:
+			new_nt = new_graph.serialize(format="nt")
+			parts.append(f"INSERT DATA {{\n  GRAPH <{graph_uri}> {{\n{new_nt}  }}\n}}")
+		return " ;\n".join(parts)
+
+	# 4. Compute diff
+	new_triples = set(new_graph)
+	old_triples = set(old_graph)
+	to_insert = new_triples - old_triples
+	to_delete = old_triples - new_triples
+
+	if not to_insert and not to_delete:
+		print(f"Graph <{graph_uri}>: diff empty — no triplestore writes needed")
+		return None
+
+	print(
+		f"Graph <{graph_uri}>: diff has {len(to_insert)} insert(s), "
+		f"{len(to_delete)} delete(s)"
+	)
+
+	# 5. Build SPARQL Update fragment
+	parts = []
+	if to_insert:
+		insert_graph = Graph()
+		for triple in to_insert:
+			insert_graph.add(triple)
+		insert_nt = insert_graph.serialize(format="nt")
+		parts.append(f"INSERT DATA {{\n  GRAPH <{graph_uri}> {{\n{insert_nt}  }}\n}}")
+
+	if to_delete:
+		delete_graph = Graph()
+		for triple in to_delete:
+			delete_graph.add(triple)
+		delete_nt = delete_graph.serialize(format="nt")
+		parts.append(f"DELETE DATA {{\n  GRAPH <{graph_uri}> {{\n{delete_nt}  }}\n}}")
+
+	return " ;\n".join(parts)
 
 
 # Cleans up any graphs in the triplestore which aren't in the list provided

@@ -4,7 +4,11 @@ Bulk ingests RDF from other systems and adds data to the triplestore and searchi
 """
 import sys, os, time, random, hashlib
 from authorised_fetch import fetch_url
-from triplestore import live_systems, ontology_cache, ONTOLOGIES_DIR, INFERRED_GRAPH, METADATA_GRAPH, replace_graph_in_triplestore, cleanup_triplestore, compute_inferences, get_source_hash, set_source_hash
+from triplestore import (
+    live_systems, ontology_cache, ONTOLOGIES_DIR, INFERRED_GRAPH, METADATA_GRAPH,
+    replace_graph_in_triplestore, cleanup_triplestore, compute_inferences,
+    get_source_hash, set_source_hash, diff_graph_in_triplestore, execute_sparql_update,
+)
 from searchindex import update_searchindex, cleanup_searchindex
 from loganne import updateLoganne
 from schedule_tracker import updateScheduleTracker
@@ -20,6 +24,23 @@ def run_ingest():
 	all_track_ids = set()
 	has_failures = False
 	any_changed = False
+
+	# ── Phase 1: collect diffs for all live sources ──────────────────────────
+	#
+	# We compute a SPARQL Update fragment for each live source whose content has
+	# changed, then execute all fragments in a single HTTP request.  Fuseki runs
+	# multi-statement SPARQL Updates in one TDB2 transaction, so readers never
+	# see a partially-updated raw graph.
+	#
+	# Ontologies keep the old replace_graph approach: they almost never change
+	# (the hash check means they're almost always skipped), so the atomicity
+	# benefit is negligible.
+
+	phase1_fragments: list[str] = []
+	# (system, url, content, content_type, new_hash) for sources that need
+	# search-index + hash updates after Phase 1 completes
+	changed_live: list[tuple] = []
+
 	for system, url in live_systems.items():
 		tracker_system = f"lucos_arachne_ingestor_{system}"
 		try:
@@ -29,18 +50,52 @@ def run_ingest():
 				print(f"Skipping {system}: content unchanged (hash {new_hash})", flush=True)
 				updateScheduleTracker(success=True, system=tracker_system)
 				continue
-			replace_graph_in_triplestore(url, content, content_type)
-			(item_ids, track_ids) = update_searchindex(system, content, content_type)
-			all_item_ids |= item_ids
-			all_track_ids |= track_ids
-			set_source_hash(url, new_hash)
-			any_changed = True
-			updateScheduleTracker(success=True, system=tracker_system)
+			fragment = diff_graph_in_triplestore(url, content, content_type)
+			if fragment:
+				phase1_fragments.append(fragment)
+			changed_live.append((system, url, content, content_type, new_hash))
 		except Exception as e:
 			has_failures = True
 			error_message = f"Ingest of {system} failed: {e}"
 			print(error_message, flush=True)
 			updateScheduleTracker(success=False, system=tracker_system, message=error_message)
+
+	# ── Execute Phase 1 atomically ────────────────────────────────────────────
+	if phase1_fragments:
+		combined_update = " ;\n".join(phase1_fragments)
+		try:
+			execute_sparql_update(combined_update)
+			print(f"Phase 1 complete: {len(phase1_fragments)} graph(s) updated atomically", flush=True)
+			any_changed = True
+		except Exception as e:
+			has_failures = True
+			error_message = f"Phase 1 (atomic SPARQL Update) failed: {e}"
+			print(error_message, flush=True)
+			# Don't proceed with hash/searchindex updates if Phase 1 failed
+			for system, url, _, _, _ in changed_live:
+				updateScheduleTracker(
+					success=False,
+					system=f"lucos_arachne_ingestor_{system}",
+					message=error_message,
+				)
+			changed_live = []
+
+	# ── Post-Phase-1: update search indices and hashes ────────────────────────
+	for system, url, content, content_type, new_hash in changed_live:
+		tracker_system = f"lucos_arachne_ingestor_{system}"
+		try:
+			(item_ids, track_ids) = update_searchindex(system, content, content_type)
+			all_item_ids |= item_ids
+			all_track_ids |= track_ids
+			set_source_hash(url, new_hash)
+			updateScheduleTracker(success=True, system=tracker_system)
+		except Exception as e:
+			has_failures = True
+			error_message = f"Post-ingest update for {system} failed: {e}"
+			print(error_message, flush=True)
+			updateScheduleTracker(success=False, system=tracker_system, message=error_message)
+
+	# ── Ontologies: existing replace_graph approach ───────────────────────────
 	for system, (graph_uri, local_file, content_type) in ontology_cache.items():
 		tracker_system = f"lucos_arachne_ingestor_{system}"
 		try:
@@ -61,6 +116,8 @@ def run_ingest():
 			error_message = f"Ingest of {system} failed: {e}"
 			print(error_message, flush=True)
 			updateScheduleTracker(success=False, system=tracker_system, message=error_message)
+
+	# ── Phase 2: rebuild inferred graph if any source changed ─────────────────
 	tracker_system = "lucos_arachne_ingestor_inference"
 	if any_changed:
 		try:
@@ -74,7 +131,12 @@ def run_ingest():
 	else:
 		print("Skipping inference: no source graphs changed this cycle", flush=True)
 		updateScheduleTracker(success=True, system=tracker_system)
-	all_graph_uris = list(live_systems.values()) + [graph_uri for graph_uri, _, _ in ontology_cache.values()] + [INFERRED_GRAPH, METADATA_GRAPH]
+
+	all_graph_uris = (
+		list(live_systems.values())
+		+ [graph_uri for graph_uri, _, _ in ontology_cache.values()]
+		+ [INFERRED_GRAPH, METADATA_GRAPH]
+	)
 	if has_failures:
 		print("Skipping cleanup: one or more sources failed to ingest. Stale items will be cleaned up on the next successful run.", flush=True)
 	else:
