@@ -1,4 +1,4 @@
-"""Tests for ingest.py — hash-skip behaviour, any_changed guard, allow-list."""
+"""Tests for ingest.py — hash-skip behaviour, Phase 1 atomicity, any_changed guard, allow-list."""
 import os
 import sys
 import types
@@ -23,8 +23,14 @@ _ONTOLOGIES_DIR_stub = "/tmp"
 _INFERRED_GRAPH_stub = "urn:lucos:inferred"
 _METADATA_GRAPH_stub = "urn:lucos:ingestor-metadata"
 
+_DIFF_FRAGMENT_STUB = (
+    f"INSERT DATA {{ GRAPH <{_GRAPH_URI}> {{ <http://ex.com/s> <http://ex.com/p> <http://ex.com/o> . }} }}"
+)
+
 _fetch_url_mock = MagicMock(return_value=(_CONTENT, _CONTENT_TYPE))
 _replace_graph_mock = MagicMock()
+_diff_graph_mock = MagicMock(return_value=_DIFF_FRAGMENT_STUB)
+_execute_sparql_update_mock = MagicMock()
 _update_searchindex_mock = MagicMock(return_value=(set(), set()))
 _cleanup_triplestore_mock = MagicMock()
 _cleanup_searchindex_mock = MagicMock()
@@ -45,6 +51,8 @@ for mod_name, attrs in [
             "INFERRED_GRAPH": _INFERRED_GRAPH_stub,
             "METADATA_GRAPH": _METADATA_GRAPH_stub,
             "replace_graph_in_triplestore": _replace_graph_mock,
+            "diff_graph_in_triplestore": _diff_graph_mock,
+            "execute_sparql_update": _execute_sparql_update_mock,
             "cleanup_triplestore": _cleanup_triplestore_mock,
             "compute_inferences": _compute_inferences_mock,
             "get_source_hash": _get_source_hash_mock,
@@ -76,7 +84,8 @@ for _mod_name in _stub_mod_names:
 
 def _reset_mocks():
     for m in [
-        _fetch_url_mock, _replace_graph_mock, _update_searchindex_mock,
+        _fetch_url_mock, _replace_graph_mock, _diff_graph_mock,
+        _execute_sparql_update_mock, _update_searchindex_mock,
         _cleanup_triplestore_mock, _cleanup_searchindex_mock,
         _compute_inferences_mock, _get_source_hash_mock, _set_source_hash_mock,
         _update_loganne_mock, _update_schedule_tracker_mock,
@@ -85,6 +94,7 @@ def _reset_mocks():
     _fetch_url_mock.return_value = (_CONTENT, _CONTENT_TYPE)
     _update_searchindex_mock.return_value = (set(), set())
     _get_source_hash_mock.return_value = None
+    _diff_graph_mock.return_value = _DIFF_FRAGMENT_STUB
 
 
 # ---------------------------------------------------------------------------
@@ -96,12 +106,20 @@ def _expected_hash(content, content_type):
     return "sha256:" + hashlib.sha256((content + content_type).encode("utf-8")).hexdigest()
 
 
-def test_hash_match_skips_replace_graph():
-    """When stored hash matches, replace_graph_in_triplestore is not called."""
+def test_hash_match_skips_diff_graph():
+    """When stored hash matches, diff_graph_in_triplestore is not called."""
     _reset_mocks()
     _get_source_hash_mock.return_value = _expected_hash(_CONTENT, _CONTENT_TYPE)
     ingest.run_ingest()
-    _replace_graph_mock.assert_not_called()
+    _diff_graph_mock.assert_not_called()
+
+
+def test_hash_match_skips_execute_sparql_update():
+    """When stored hash matches, execute_sparql_update is not called."""
+    _reset_mocks()
+    _get_source_hash_mock.return_value = _expected_hash(_CONTENT, _CONTENT_TYPE)
+    ingest.run_ingest()
+    _execute_sparql_update_mock.assert_not_called()
 
 
 def test_hash_match_skips_update_searchindex():
@@ -113,7 +131,7 @@ def test_hash_match_skips_update_searchindex():
 
 
 def test_hash_match_skips_set_source_hash():
-    """When stored hash matches, set_source_hash is not called (nothing to update)."""
+    """When stored hash matches, set_source_hash is not called."""
     _reset_mocks()
     _get_source_hash_mock.return_value = _expected_hash(_CONTENT, _CONTENT_TYPE)
     ingest.run_ingest()
@@ -121,23 +139,33 @@ def test_hash_match_skips_set_source_hash():
 
 
 # ---------------------------------------------------------------------------
-# Hash miss / no prior hash — source is ingested
+# Hash miss / no prior hash — source is ingested via diff path
 # ---------------------------------------------------------------------------
 
-def test_hash_miss_calls_replace_graph():
-    """When stored hash differs, replace_graph_in_triplestore is called."""
+def test_hash_miss_calls_diff_graph():
+    """When stored hash differs, diff_graph_in_triplestore is called with the correct args."""
     _reset_mocks()
     _get_source_hash_mock.return_value = "sha256:old"
     ingest.run_ingest()
-    _replace_graph_mock.assert_called_once_with(_GRAPH_URI, _CONTENT, _CONTENT_TYPE)
+    _diff_graph_mock.assert_called_once_with(_GRAPH_URI, _CONTENT, _CONTENT_TYPE)
 
 
-def test_no_prior_hash_calls_replace_graph():
-    """When no hash is stored (None), replace_graph_in_triplestore is called."""
+def test_no_prior_hash_calls_diff_graph():
+    """When no hash is stored (None), diff_graph_in_triplestore is called."""
     _reset_mocks()
     _get_source_hash_mock.return_value = None
     ingest.run_ingest()
-    _replace_graph_mock.assert_called_once()
+    _diff_graph_mock.assert_called_once()
+
+
+def test_diff_fragment_passed_to_execute_sparql_update():
+    """The fragment returned by diff_graph_in_triplestore is passed to execute_sparql_update."""
+    _reset_mocks()
+    _get_source_hash_mock.return_value = None
+    ingest.run_ingest()
+    _execute_sparql_update_mock.assert_called_once()
+    sparql = _execute_sparql_update_mock.call_args.args[0]
+    assert _DIFF_FRAGMENT_STUB in sparql
 
 
 def test_hash_written_after_searchindex_update():
@@ -161,6 +189,56 @@ def test_hash_not_written_when_searchindex_fails():
 
 
 # ---------------------------------------------------------------------------
+# Phase 1 atomicity — single execute_sparql_update call
+# ---------------------------------------------------------------------------
+
+def test_phase1_single_execute_call_for_one_source():
+    """Phase 1 issues exactly one execute_sparql_update call even for one source."""
+    _reset_mocks()
+    _get_source_hash_mock.return_value = None
+    ingest.run_ingest()
+    _execute_sparql_update_mock.assert_called_once()
+
+
+def test_phase1_no_execute_when_diff_returns_none():
+    """When diff_graph_in_triplestore returns None, execute_sparql_update is not called."""
+    _reset_mocks()
+    _get_source_hash_mock.return_value = None
+    _diff_graph_mock.return_value = None
+    ingest.run_ingest()
+    _execute_sparql_update_mock.assert_not_called()
+
+
+def test_phase1_execute_before_searchindex():
+    """execute_sparql_update is called before update_searchindex."""
+    _reset_mocks()
+    _get_source_hash_mock.return_value = None
+    call_order = []
+    _execute_sparql_update_mock.side_effect = lambda *a, **kw: call_order.append("phase1")
+    _update_searchindex_mock.side_effect = lambda *a, **kw: (call_order.append("searchindex"), (set(), set()))[1]
+    ingest.run_ingest()
+    assert call_order.index("phase1") < call_order.index("searchindex")
+
+
+def test_phase1_failure_prevents_hash_update():
+    """If execute_sparql_update raises, set_source_hash is not called."""
+    _reset_mocks()
+    _get_source_hash_mock.return_value = None
+    _execute_sparql_update_mock.side_effect = Exception("Fuseki error")
+    ingest.run_ingest()
+    _set_source_hash_mock.assert_not_called()
+
+
+def test_phase1_failure_prevents_searchindex_update():
+    """If execute_sparql_update raises, update_searchindex is not called."""
+    _reset_mocks()
+    _get_source_hash_mock.return_value = None
+    _execute_sparql_update_mock.side_effect = Exception("Fuseki error")
+    ingest.run_ingest()
+    _update_searchindex_mock.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
 # any_changed guard on compute_inferences
 # ---------------------------------------------------------------------------
 
@@ -178,6 +256,27 @@ def test_changed_source_triggers_inference():
     _get_source_hash_mock.return_value = None
     ingest.run_ingest()
     _compute_inferences_mock.assert_called_once()
+
+
+def test_diff_none_but_hash_changed_skips_inference():
+    """
+    If diff returns None (RDF semantically unchanged despite different bytes),
+    no triplestore writes occur and inference is not triggered.
+    """
+    _reset_mocks()
+    _get_source_hash_mock.return_value = "sha256:old"
+    _diff_graph_mock.return_value = None
+    ingest.run_ingest()
+    _compute_inferences_mock.assert_not_called()
+
+
+def test_phase1_failure_skips_inference():
+    """If Phase 1 fails, compute_inferences is not triggered."""
+    _reset_mocks()
+    _get_source_hash_mock.return_value = None
+    _execute_sparql_update_mock.side_effect = Exception("Fuseki error")
+    ingest.run_ingest()
+    _compute_inferences_mock.assert_not_called()
 
 
 # ---------------------------------------------------------------------------
@@ -200,3 +299,32 @@ def test_cleanup_allow_list_includes_inferred_graph():
     ingest.run_ingest()
     allow_list = _cleanup_triplestore_mock.call_args.args[0]
     assert _INFERRED_GRAPH_stub in allow_list
+
+
+# ---------------------------------------------------------------------------
+# Ontologies — still use replace_graph_in_triplestore (not diff path)
+# ---------------------------------------------------------------------------
+
+def test_ontology_uses_replace_graph_not_diff():
+    """Ontologies use replace_graph_in_triplestore, not diff_graph_in_triplestore."""
+    _reset_mocks()
+    # Patch ontology_cache to have one entry
+    ingest.ontology_cache = {
+        "test_ont": ("http://example.com/ont", "test.ttl", "text/turtle")
+    }
+    ingest.live_systems = {}
+    old_ONTOLOGIES_DIR = ingest.ONTOLOGIES_DIR
+    import tempfile, os
+    with tempfile.TemporaryDirectory() as tmpdir:
+        ont_file = os.path.join(tmpdir, "test.ttl")
+        with open(ont_file, "w") as f:
+            f.write("@prefix ex: <http://example.com/> . ex:s ex:p ex:o .")
+        ingest.ONTOLOGIES_DIR = tmpdir
+        _get_source_hash_mock.return_value = None
+        ingest.run_ingest()
+    _replace_graph_mock.assert_called_once()
+    _diff_graph_mock.assert_not_called()
+    # Restore
+    ingest.ontology_cache = _ontology_cache_stub
+    ingest.live_systems = _live_systems_stub
+    ingest.ONTOLOGIES_DIR = old_ONTOLOGIES_DIR
