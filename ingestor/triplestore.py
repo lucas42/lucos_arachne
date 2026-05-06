@@ -1,6 +1,7 @@
 import os, sys
 import requests
 from rdflib import BNode, Graph
+from skolemise import skolemise_graph
 
 KEY_LUCOS_ARACHNE = os.environ.get("KEY_LUCOS_ARACHNE")
 
@@ -289,8 +290,6 @@ def diff_graph_in_triplestore(graph_uri: str, new_content: str, content_type: st
 	blank nodes and replaces them with the Skolemised content in a single atomic
 	transaction.
 	"""
-	from skolemise import skolemise_graph
-
 	# 1 + 2. Parse incoming content and Skolemise
 	rdflib_format = _content_type_to_rdflib_format(content_type)
 	new_graph = Graph()

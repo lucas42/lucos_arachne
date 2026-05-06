@@ -47,8 +47,10 @@ def _compute_bnode_hash(bnode: BNode, graph: Graph, visited: frozenset) -> str:
     new_visited = visited | {bnode}
     parts: list[tuple[str, str]] = []
 
+    # Outgoing triples (bnode as subject).  Prefixed with ">" to distinguish
+    # direction from incoming edges below.
     for (_, p, o) in graph.triples((bnode, None, None)):
-        pred_str = str(p)
+        pred_str = "> " + str(p)
         if isinstance(o, BNode):
             # Recurse — propagates ValueError upward on cycle
             child_hash = _compute_bnode_hash(o, graph, new_visited)
@@ -56,6 +58,24 @@ def _compute_bnode_hash(bnode: BNode, graph: Graph, visited: frozenset) -> str:
         else:
             # n3() gives a canonical string for URIRef and Literal
             parts.append((pred_str, o.n3()))
+
+    # Incoming edges from non-blank-node subjects.  Prefixed with "<" to
+    # distinguish direction from outgoing edges above.
+    #
+    # Including the parent URI ensures that two blank nodes with identical
+    # outgoing structure but different URI parents get different Skolem URIs —
+    # preventing unintended merging of structurally-similar but logically-
+    # distinct nodes (e.g. two festival periods with the same dates but
+    # belonging to different events).
+    #
+    # Edges from blank-node subjects are deliberately excluded: they would
+    # create a recursive dependency on the parent's not-yet-computed hash,
+    # causing the cycle-detection path to fire incorrectly.  The distinctness
+    # of deeper nesting is captured transitively through the outgoing-edge
+    # recursion at each level.
+    for (s, p, _) in graph.triples((None, None, bnode)):
+        if not isinstance(s, BNode):
+            parts.append(("< " + str(p), str(s)))
 
     parts.sort()
     canonical = repr(parts)

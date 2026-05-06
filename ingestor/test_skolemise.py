@@ -149,6 +149,41 @@ def test_adding_triple_to_bnode_context_changes_skolem_uri():
     assert skolem_uris_orig != skolem_uris_mod
 
 
+def test_identical_outgoing_different_parent_gets_different_skolem_uri():
+    """
+    Two blank nodes in the same graph with identical outgoing structure but
+    different parent URIs must receive different Skolem URIs.
+
+    This guards against the hash-collision bug where outgoing-only hashing
+    would merge two distinct festival periods that happen to share the same
+    dates into a single triplestore node.
+    """
+    g = Graph()
+    b0 = BNode()
+    b1 = BNode()
+
+    # Festival1 has period Jan 1–7
+    g.add((ex("Festival1"), ex("hasPeriod"), b0))
+    g.add((b0, ex("startDate"), Literal("2024-01-01", datatype=XSD.date)))
+    g.add((b0, ex("endDate"), Literal("2024-01-07", datatype=XSD.date)))
+
+    # Festival2 has an identical period Jan 1–7 (same dates, different parent)
+    g.add((ex("Festival2"), ex("hasPeriod"), b1))
+    g.add((b1, ex("startDate"), Literal("2024-01-01", datatype=XSD.date)))
+    g.add((b1, ex("endDate"), Literal("2024-01-07", datatype=XSD.date)))
+
+    result = skolemise_graph(g)
+
+    # Both blank nodes must produce Skolem URIs
+    skolem_objects = [str(o) for _, _, o in result if str(o).startswith(SKOLEM_PREFIX)]
+    skolem_subjects = [str(s) for s, _, _ in result if str(s).startswith(SKOLEM_PREFIX)]
+    all_skolem = set(skolem_objects + skolem_subjects)
+
+    assert len(all_skolem) == 2, (
+        f"Expected 2 distinct Skolem URIs (one per festival period), got {len(all_skolem)}: {all_skolem}"
+    )
+
+
 # ---------------------------------------------------------------------------
 # Nested blank nodes
 # ---------------------------------------------------------------------------
