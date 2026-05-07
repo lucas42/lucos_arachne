@@ -1,5 +1,6 @@
 import os, sys, re
 import requests
+from urllib.parse import urlparse
 
 session = requests.Session()
 session.headers.update({
@@ -7,16 +8,40 @@ session.headers.update({
 	"Accept": "application/rdf+xml, text/turtle, application/ld+json",
 })
 
+_TRUSTED_HOSTS = {"localhost", "127.0.0.1", "host.docker.internal"}
+
+def _is_trusted_host(url: str) -> bool:
+	"""Return True if the URL's hostname is a trusted lucos host.
+
+	Auth headers must only be sent to:
+	- lucos production domains (*.l42.eu)
+	- localhost / 127.0.0.1 (dev)
+	- host.docker.internal (dev container-to-container)
+
+	Any other hostname (e.g. an external canonical URI like id.loc.gov) is
+	untrusted — even if the request originated from a lucos webhook.
+	"""
+	try:
+		hostname = urlparse(url).hostname or ""
+	except ValueError:
+		return False
+	return hostname in _TRUSTED_HOSTS or hostname.endswith(".l42.eu")
+
 def fetch_url(system, url):
-	auth_header = {}
-	if system.startswith("lucos_"):
+	def _build_auth_header(target_url: str) -> dict:
+		"""Return an auth header dict for target_url, or {} if credentials must not be sent."""
+		if not system.startswith("lucos_"):
+			return {}
+		if not _is_trusted_host(target_url):
+			print(f"Skipping auth header for untrusted host: {urlparse(target_url).hostname}")
+			return {}
 		key_var = f"KEY_{system.upper()}"
 		key = os.environ.get(key_var)
 		if not key:
 			sys.exit(
-				f"No {key_var} environment variable found — won't be able to authenticate against ingestion endpoint {url}"
+				f"No {key_var} environment variable found — won't be able to authenticate against ingestion endpoint {target_url}"
 			)
-		auth_header = {"Authorization": f"Bearer {key}"}
+		return {"Authorization": f"Bearer {key}"}
 
 	# In dev environment, where URLs can be referencing localhost, switch domain to the docker internal domain to allow requests between containers
 	def map_localhost(url) -> str:
@@ -30,11 +55,12 @@ def fetch_url(system, url):
 	# Fetch data
 	resp = session.get(
 		url,
-		headers={**auth_header},
+		headers={**_build_auth_header(url)},
 		allow_redirects=False,
 	)
 
-	# Do first redirect manually, so auth header can be sent to next url
+	# Do first redirect manually so we can re-evaluate auth for the redirect target.
+	# Credentials must never follow a redirect to an untrusted host.
 	if resp.is_redirect or resp.is_permanent_redirect:
 		redirect_url = resp.headers["Location"]
 		redirect_url = requests.compat.urljoin(resp.url, redirect_url)
@@ -43,7 +69,7 @@ def fetch_url(system, url):
 
 		resp = session.get(
 			redirect_url,
-			headers={**auth_header},
+			headers={**_build_auth_header(redirect_url)},
 			allow_redirects=True,
 		)
 
