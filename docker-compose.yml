@@ -70,7 +70,7 @@ services:
         condition: service_healthy
     restart: always
     healthcheck:
-      test: ["CMD", "python3", "-c", "import socket; s=socket.socket(); s.settimeout(5); s.connect(('127.0.0.1', 8099)); s.close()"]
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8099/_info')"]
       interval: 10s
       timeout: 5s
       retries: 3
