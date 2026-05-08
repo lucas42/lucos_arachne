@@ -41,9 +41,6 @@ def _process_event(event):
 			(content, content_type) = fetch_url(event["source"], event["targetUri"])
 			replace_item_in_triplestore(event["targetUri"], live_systems[event["source"]], content, content_type)
 			update_searchindex(event["source"], content, content_type)
-		else:
-			print(f"Unknown webhook event type: {event_type}", file=sys.stderr)
-			_increment_failure()
 	except Exception:
 		traceback.print_exc()
 		_increment_failure()
