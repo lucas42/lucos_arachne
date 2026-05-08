@@ -17,6 +17,7 @@ from searchindex import (
     _extract_language_code,
     _parse_iso8601_duration,
     graph_to_track_docs,
+    graph_to_typesense_docs,
     get_label,
     get_category,
 )
@@ -281,3 +282,121 @@ def test_get_category_raises_when_type_has_no_category():
         assert False, "Expected ValueError"
     except ValueError as e:
         assert "http://example.com/UnknownType" in str(e)
+
+
+# ---------------------------------------------------------------------------
+# graph_to_typesense_docs — indexing items with type-level vs subject-level category
+# ---------------------------------------------------------------------------
+
+OWL = Namespace("http://www.w3.org/2002/07/owl#")
+
+
+def _make_item_graph(subj_uri, type_uri, type_label, pref_label):
+    """Build a minimal graph with one indexable subject (type-level hasCategory on the type)."""
+    g = Graph()
+    subj = URIRef(subj_uri)
+    type_u = URIRef(type_uri)
+    cat_uri = URIRef("https://eolas.l42.eu/ontology/Technological")
+    g.add((subj, RDF.type, type_u))
+    g.add((subj, SKOS.prefLabel, Literal(pref_label)))
+    g.add((type_u, SKOS.prefLabel, Literal(type_label)))
+    g.add((type_u, EOLAS_NS.hasCategory, cat_uri))
+    g.add((cat_uri, SKOS.prefLabel, Literal("Technological")))
+    return g
+
+
+def test_graph_to_typesense_docs_type_level_category():
+    """Subject gets category from type-level eolas:hasCategory (e.g. Vehicle -> TransportMode)."""
+    g = _make_item_graph(
+        "https://eolas.l42.eu/metadata/vehicle/mallard/",
+        "https://eolas.l42.eu/metadata/transportmode/train/",
+        "Train",
+        "Mallard",
+    )
+    docs = graph_to_typesense_docs(g)
+    assert len(docs) == 1
+    doc = docs[0]
+    assert doc["pref_label"] == "Mallard"
+    assert doc["type"] == "Train"
+    assert doc["category"] == "Technological"
+
+
+def test_graph_to_typesense_docs_subject_level_category():
+    """
+    Subject gets category from subject-level eolas:hasCategory when it's present on the subject URI.
+
+    This covers PlaceType/CreativeWorkType instances whose category is a per-instance field:
+    e.g. Country (type=eolas:PlaceType) emits eolas:hasCategory on the Country URI itself,
+    not on eolas:PlaceType.  The ingestor must look at the subject first.
+    """
+    g = Graph()
+    subj = URIRef("https://eolas.l42.eu/metadata/placetype/country/")
+    type_uri = URIRef("https://eolas.l42.eu/ontology/PlaceType")
+    cat_uri = URIRef("https://eolas.l42.eu/ontology/Anthropogeographical")
+
+    g.add((subj, RDF.type, type_uri))
+    g.add((subj, SKOS.prefLabel, Literal("Country")))
+    # Category is on the SUBJECT, not the type
+    g.add((subj, EOLAS_NS.hasCategory, cat_uri))
+    g.add((cat_uri, SKOS.prefLabel, Literal("Anthropogeographical")))
+    # Type has a label but no hasCategory triple
+    g.add((type_uri, SKOS.prefLabel, Literal("Place Type")))
+
+    docs = graph_to_typesense_docs(g)
+    assert len(docs) == 1
+    doc = docs[0]
+    assert doc["pref_label"] == "Country"
+    assert doc["type"] == "Place Type"
+    assert doc["category"] == "Anthropogeographical"
+
+
+def test_graph_to_typesense_docs_subject_level_category_takes_precedence():
+    """
+    Subject-level hasCategory takes precedence over type-level when both are present.
+
+    This is important for TransportMode instances (e.g. Train) which have both:
+    - eolas:hasCategory on the subject URI (from get_rdf())
+    - eolas:hasCategory on eolas:TransportMode (from ontology_graph() class constant)
+    Both point to the same value, so the outcome is identical either way.
+    """
+    g = Graph()
+    subj = URIRef("https://eolas.l42.eu/metadata/transportmode/train/")
+    type_uri = URIRef("https://eolas.l42.eu/ontology/TransportMode")
+    cat_uri = URIRef("https://eolas.l42.eu/ontology/Technological")
+
+    g.add((subj, RDF.type, type_uri))
+    g.add((subj, SKOS.prefLabel, Literal("Train")))
+    # Category on both subject and type (TransportMode has a class-level category constant)
+    g.add((subj, EOLAS_NS.hasCategory, cat_uri))
+    g.add((type_uri, EOLAS_NS.hasCategory, cat_uri))
+    g.add((type_uri, SKOS.prefLabel, Literal("Mode of Transport")))
+    g.add((cat_uri, SKOS.prefLabel, Literal("Technological")))
+
+    docs = graph_to_typesense_docs(g)
+    assert len(docs) == 1
+    doc = docs[0]
+    assert doc["type"] == "Mode of Transport"
+    assert doc["category"] == "Technological"
+
+
+def test_graph_to_typesense_docs_skips_subject_without_type():
+    """Subjects with no rdf:type (other than OWL class URIs) are not indexed."""
+    g = Graph()
+    subj = URIRef("https://eolas.l42.eu/metadata/thing/mystery/")
+    g.add((subj, SKOS.prefLabel, Literal("Mystery")))
+    docs = graph_to_typesense_docs(g)
+    assert docs == []
+
+
+def test_graph_to_typesense_docs_skips_subject_without_pref_label():
+    """Subjects with a type but no skos:prefLabel are not indexed."""
+    g = Graph()
+    subj = URIRef("https://eolas.l42.eu/metadata/thing/nolabel/")
+    type_uri = URIRef("https://eolas.l42.eu/ontology/SomeType")
+    cat_uri = URIRef("https://eolas.l42.eu/ontology/Technological")
+    g.add((subj, RDF.type, type_uri))
+    g.add((type_uri, SKOS.prefLabel, Literal("Some Type")))
+    g.add((type_uri, EOLAS_NS.hasCategory, cat_uri))
+    g.add((cat_uri, SKOS.prefLabel, Literal("Technological")))
+    docs = graph_to_typesense_docs(g)
+    assert docs == []

@@ -89,7 +89,15 @@ def graph_to_typesense_docs(graph: Graph):
 				doc["lang_family"] = str(o).split('/')[-1]
 			else:
 				doc["type"] = get_label(graph, o)
-				doc["category"] = get_category(graph, o)
+				# Prefer subject-level eolas:hasCategory (e.g. PlaceType instances like Country
+				# carry their own per-instance category directly on the subject URI).  Fall back
+				# to type-level (e.g. Vehicle subjects inherit category from their TransportMode
+				# type, which has eolas:hasCategory on the type URI).
+				subject_cats = list(graph.objects(subj, EOLAS_NS.hasCategory))
+				if subject_cats:
+					doc["category"] = get_label(graph, subject_cats[0])
+				else:
+					doc["category"] = get_category(graph, o)
 			break
 
 		# pref_label
