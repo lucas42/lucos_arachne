@@ -1,5 +1,6 @@
 #! /usr/local/bin/python3
-import json, sys, os, traceback
+import json, sys, os, traceback, threading
+from concurrent.futures import ThreadPoolExecutor
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from authorised_fetch import fetch_url
 from triplestore import live_systems, replace_item_in_triplestore, delete_item_in_triplestore, merge_items_in_triplestore
@@ -11,6 +12,39 @@ try:
 	port = int(os.environ.get("PORT"))
 except ValueError:
 	sys.exit("\033[91mPORT isn't an integer\033[0m")
+
+_failed_ingestion_count = 0
+_counter_lock = threading.Lock()
+_executor = ThreadPoolExecutor(max_workers=10)
+
+
+def _increment_failure():
+	global _failed_ingestion_count
+	with _counter_lock:
+		_failed_ingestion_count += 1
+
+
+def _process_event(event):
+	"""Process a validated webhook event. Runs in a thread pool worker."""
+	try:
+		event_type = event["type"]
+		if event_type.endswith("Created") or event_type.endswith("Added") or event_type.endswith("Updated"):
+			(content, content_type) = fetch_url(event["source"], event["url"])
+			replace_item_in_triplestore(event["url"], live_systems[event["source"]], content, content_type)
+			update_searchindex(event["source"], content, content_type)
+		elif event_type.endswith("Deleted"):
+			delete_item_in_triplestore(event["url"], live_systems[event["source"]])
+			delete_doc_in_searchindex(event["source"], event["url"])
+		elif event_type.endswith("Merged"):
+			merge_items_in_triplestore(event["sourceUri"], event["targetUri"], live_systems[event["source"]])
+			delete_doc_in_searchindex(event["source"], event["sourceUri"])
+			(content, content_type) = fetch_url(event["source"], event["targetUri"])
+			replace_item_in_triplestore(event["targetUri"], live_systems[event["source"]], content, content_type)
+			update_searchindex(event["source"], content, content_type)
+	except Exception:
+		traceback.print_exc()
+		_increment_failure()
+
 
 def _get_valid_keys():
 	"""Parse CLIENT_KEYS env var (semicolon-separated name=value pairs) into a set of valid tokens."""
@@ -32,9 +66,13 @@ def is_authorised(headers):
 
 class WebhookHandler(BaseHTTPRequestHandler):
 	def do_GET(self):
-		self.send_error(404, "Page Not Found")
+		if self.path == "/_info":
+			self.infoController()
+		else:
+			self.send_error(404, "Page Not Found")
 		self.wfile.flush()
 		self.connection.close()
+
 	def do_POST(self):
 		self.post_data = self.rfile.read(int(self.headers['Content-Length']))
 		if (self.path.startswith("/webhook")):
@@ -43,6 +81,24 @@ class WebhookHandler(BaseHTTPRequestHandler):
 			self.send_error(404, "Page Not Found")
 		self.wfile.flush()
 		self.connection.close()
+
+	def infoController(self):
+		body = json.dumps({
+			"system": os.environ.get("SYSTEM", "lucos_arachne_ingestor"),
+			"checks": {},
+			"metrics": {
+				"failed_ingestion_count": {
+					"value": _failed_ingestion_count,
+					"techDetail": "Number of webhook events that failed to ingest since the last restart",
+				}
+			},
+			"ci": {"circle": "gh/lucas42/lucos_arachne"},
+		}).encode("utf-8")
+		self.send_response(200, "OK")
+		self.send_header("Content-Type", "application/json")
+		self.end_headers()
+		self.wfile.write(body)
+
 	def webhookController(self):
 		if not is_authorised(self.headers):
 			self.send_response(401, "Unauthorized")
@@ -56,37 +112,15 @@ class WebhookHandler(BaseHTTPRequestHandler):
 		except json.decoder.JSONDecodeError as error:
 			self.send_error(400, "Invalid json", str(error))
 			return
-		try:
-			if event["type"].endswith("Created") or event["type"].endswith("Added") or event["type"].endswith("Updated"):
-				(content, content_type) = fetch_url(event["source"], event["url"])
-				replace_item_in_triplestore(event["url"], live_systems[event["source"]], content, content_type)
-				update_searchindex(event["source"], content, content_type)
-				self.send_response(200, "OK")
-				self.send_header("Content-type", "text/plain")
-				self.end_headers()
-				self.wfile.write(bytes("Updated", "utf-8"))
-			elif event["type"].endswith("Deleted"):
-				delete_item_in_triplestore(event["url"], live_systems[event["source"]])
-				delete_doc_in_searchindex(event["source"], event["url"])
-				self.send_response(200, "OK")
-				self.send_header("Content-type", "text/plain")
-				self.end_headers()
-				self.wfile.write(bytes("Deleted", "utf-8"))
-			elif event["type"].endswith("Merged"):
-				merge_items_in_triplestore(event["sourceUri"], event["targetUri"], live_systems[event["source"]])
-				delete_doc_in_searchindex(event["source"], event["sourceUri"])
-				(content, content_type) = fetch_url(event["source"], event["targetUri"])
-				replace_item_in_triplestore(event["targetUri"], live_systems[event["source"]], content, content_type)
-				update_searchindex(event["source"], content, content_type)
-				self.send_response(200, "OK")
-				self.send_header("Content-type", "text/plain")
-				self.end_headers()
-				self.wfile.write(bytes("Merged", "utf-8"))
-			else:
-				self.send_error(404, "Webhook type Not Found")
-		except Exception as error:
-			traceback.print_exc()
-			self.send_error(500, "Error updating datastore: "+str(error))
+		event_type = event.get("type", "")
+		if not any(event_type.endswith(suffix) for suffix in ("Created", "Added", "Updated", "Deleted", "Merged")):
+			self.send_error(404, "Webhook type Not Found")
+			return
+		_executor.submit(_process_event, event)
+		self.send_response(202, "Accepted")
+		self.send_header("Content-type", "text/plain")
+		self.end_headers()
+		self.wfile.write(b"Accepted")
 
 if __name__ == "__main__":
 	server = HTTPServer(('', port), WebhookHandler)
