@@ -1,0 +1,38 @@
+<html>
+	<head>
+		<title>LucOs Arachne - Historical Events Timeline</title>
+		<meta name="viewport" content="initial-scale=1.0, user-scalable=no, width=device-width" />
+		<link href="/explore/style.css" rel="stylesheet" />
+		<link rel="icon" href="/icon.png" />
+		<link rel="manifest" href="/manifest.json" />
+	</head>
+	<body>
+		<lucos-navbar bg-colour="#02666d">Historical Events Timeline</lucos-navbar>
+		<a href="/explore">&lt;- Home</a>
+		<div class="module">
+			<h2>Historical Events</h2>
+			<ol class="timeline">
+				<% for (const event of dated) { %>
+				<li class="timeline-event">
+					<span class="event-date"><%= event.dateLabel %></span>
+					<a class="event-name" href="/explore/item?uri=<%= encodeURIComponent(event.uri) %>"><%= event.label %></a>
+					<div class="duration-bar-container">
+						<div class="duration-bar" style="width: <%= event.durationPct %>%"></div>
+					</div>
+				</li>
+				<% } %>
+			</ol>
+		</div>
+		<% if (undated.length > 0) { %>
+		<div class="module">
+			<h2>Events without known dates</h2>
+			<ul class="undated-events">
+				<% for (const event of undated) { %>
+				<li><a href="/explore/item?uri=<%= encodeURIComponent(event.uri) %>"><%= event.label %></a></li>
+				<% } %>
+			</ul>
+		</div>
+		<% } %>
+		<script type="text/javascript" src="/explore/client.js"></script>
+	</body>
+</html>

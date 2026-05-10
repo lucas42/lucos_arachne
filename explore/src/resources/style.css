@@ -97,3 +97,46 @@ nav.pagination {
 nav.pagination a {
 	color: LinkText; /* Override visited link colours etc */
 }
+.timeline {
+	list-style: none;
+	padding: 10px 20px;
+	margin: 0;
+}
+.timeline-event {
+	display: flex;
+	align-items: center;
+	padding: 5px 0;
+	border-bottom: 1px solid #ddd;
+	gap: 12px;
+}
+.timeline-event:last-child {
+	border-bottom: none;
+}
+.event-date {
+	font-family: monospace;
+	min-width: 160px;
+	text-align: right;
+	color: #555;
+	flex-shrink: 0;
+}
+.event-name {
+	flex: 1;
+	min-width: 150px;
+}
+.duration-bar-container {
+	width: 150px;
+	height: 10px;
+	background: #ddd;
+	border-radius: 5px;
+	overflow: hidden;
+	flex-shrink: 0;
+}
+.duration-bar {
+	height: 100%;
+	background-color: #02666d;
+	min-width: 2px;
+}
+.undated-events {
+	padding: 10px 20px;
+	margin: 0;
+}

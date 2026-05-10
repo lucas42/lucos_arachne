@@ -4,6 +4,7 @@ import rateLimit from 'express-rate-limit';
 import { middleware as authMiddleware } from './auth.js';
 import { processBindings, processPhaseACounts, processPhaseCBindings } from './processBindings.js';
 import { computeDisplayLabels } from './disambiguate.js';
+import { formatYearRange } from './formatYearRange.js';
 
 const app = express();
 app.auth = authMiddleware;
@@ -141,6 +142,64 @@ app.get('/sparql-explorer', catchErrors(async (req, res) => {
 	res.render('sparql', {
 		sparql_auth: Buffer.from(`lucos_arachne:${process.env.KEY_LUCOS_ARACHNE}`).toString('base64'),
 	});
+}));
+app.get('/timeline', catchErrors(async (req, res) => {
+	const bindings = await sparqlFetch(`
+		PREFIX skos: <http://www.w3.org/2004/02/skos/core#>
+		PREFIX eolas: <https://eolas.l42.eu/ontology/>
+		PREFIX time: <http://www.w3.org/2006/time#>
+		SELECT ?event ?label ?startYearVal ?endYearVal WHERE {
+			?event a eolas:HistoricalEvent .
+			?event skos:prefLabel ?label .
+			OPTIONAL {
+				?event eolas:startYear ?startYearBn .
+				?startYearBn time:year ?startYearVal .
+			}
+			OPTIONAL {
+				?event eolas:endYear ?endYearBn .
+				?endYearBn time:year ?endYearVal .
+			}
+		}
+		ORDER BY ASC(?startYearVal) ASC(?label)
+	`);
+
+	// De-duplicate by event URI (OPTIONAL joins can produce multiple rows per event)
+	const seen = new Set();
+	const dated = [];
+	const undated = [];
+
+	for (const row of bindings) {
+		const uri = row.event.value;
+		if (seen.has(uri)) continue;
+		seen.add(uri);
+
+		const label = row.label.value;
+		const startYear = row.startYearVal ? parseInt(row.startYearVal.value, 10) : null;
+		const endYear = row.endYearVal ? parseInt(row.endYearVal.value, 10) : null;
+
+		if (startYear !== null) {
+			const resolvedEndYear = endYear ?? startYear;
+			dated.push({
+				uri,
+				label,
+				startYear,
+				endYear: resolvedEndYear,
+				dateLabel: formatYearRange(startYear, resolvedEndYear),
+			});
+		} else {
+			undated.push({ uri, label });
+		}
+	}
+
+	// Compute duration bar widths relative to the longest event
+	if (dated.length > 0) {
+		const maxDuration = Math.max(...dated.map(e => e.endYear - e.startYear + 1));
+		for (const e of dated) {
+			e.durationPct = Math.max(1, Math.round((e.endYear - e.startYear + 1) / maxDuration * 100));
+		}
+	}
+
+	res.render('timeline', { dated, undated });
 }));
 app.get('/search', catchErrors(async (req, res) => {
 	if (!req.query.q) {
