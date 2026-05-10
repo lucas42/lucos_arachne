@@ -20,17 +20,27 @@ body {
 
 .module {
 	background: #f0fbff;
-	border: solid #555;
+	border: solid var(--category-border, #555);
 	border-radius: 5px;
 	margin: 15px 0;
 }
 .module h2 {
 	margin: 0;
 	text-align: center;
-	background-color: #555;
-	color: #fff;
+	background-color: var(--category-background, #555);
+	color: var(--category-text, #fff);
 	padding: 3px;
 	background-image: linear-gradient(transparent 10%, transparent 15%, rgba(0, 0, 0, 0.4) 100%);
+}
+.category-badge {
+	display: inline-block;
+	padding: 1px 6px;
+	border-radius: 3px;
+	font-size: 0.75em;
+	background-color: var(--category-background, #555);
+	border: 1px solid var(--category-border, #888);
+	color: var(--category-text, #fff);
+	vertical-align: middle;
 }
 #search form {
 	margin: 20px;

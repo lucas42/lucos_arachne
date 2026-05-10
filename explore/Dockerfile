@@ -10,6 +10,7 @@ RUN npm install
 
 COPY src .
 COPY webpack.config.js .
+COPY scripts scripts
 
 ## Run the build step and then delete everything which only gets used for the build
 RUN npm run build

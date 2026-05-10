@@ -211,7 +211,7 @@ app.get('/search', catchErrors(async (req, res) => {
 		q: req.query.q,
 		query_by: "pref_label,labels,description,lyrics",
 		query_by_weights: "10,8,3,1",
-		include_fields: "id,pref_label,type,labels,contained_in,artist",
+		include_fields: "id,pref_label,type,labels,contained_in,artist,category",
 		sort_by: "_text_match:desc,pref_label:asc",
 		prioritize_num_matching_fields: false,
 		enable_highlight_v1: false,
@@ -375,12 +375,28 @@ app.get('/item', catchErrors(async (req, res) => {
 		}
 	}
 
+	// Fetch the category for this item (via its type's eolas:hasCategory relation).
+	const categoryBindings = await sparqlFetch(`
+		PREFIX eolas: <https://eolas.l42.eu/ontology/>
+		PREFIX skos: <http://www.w3.org/2004/02/skos/core#>
+		SELECT ?categoryLabel WHERE {
+			BIND(<${uri}> AS ?subject)
+			?subject a ?type .
+			?type eolas:hasCategory ?category .
+			?category skos:prefLabel ?categoryLabel .
+			FILTER(LANG(?categoryLabel) = 'en')
+		}
+		LIMIT 1
+	`);
+	const category = categoryBindings.length > 0 ? categoryBindings[0].categoryLabel.value : null;
+
 	res.render('item', {
 		uri,
 		types,
 		prefLabel,
 		predicates,
 		wikipediaLink,
+		category,
 	});
 }));
 
