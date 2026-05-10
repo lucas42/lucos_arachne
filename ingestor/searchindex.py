@@ -9,7 +9,7 @@ MO = Namespace("http://purl.org/ontology/mo/")
 LOC_NS = Namespace("http://www.loc.gov/mads/rdf/v1#")
 EOLAS_NS = Namespace(f"https://eolas.l42.eu/ontology/")
 MEDIA_MANAGER_ONTOLOGY = Namespace("https://media-metadata.l42.eu/ontology/")
-MMM = Namespace("https://media-api.l42.eu/ontology#")
+MMM = Namespace("https://media-metadata.l42.eu/ontology#")
 SDO = Namespace("https://schema.org/")
 
 # RDF/OWL types which shouldn't be indexed in search index

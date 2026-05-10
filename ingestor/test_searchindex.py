@@ -26,7 +26,7 @@ MO = Namespace("http://purl.org/ontology/mo/")
 BASE = Namespace("http://example.com/")
 MEDIA = Namespace("https://media-metadata.l42.eu/")
 MEDIA_MANAGER_ONTOLOGY = Namespace("https://media-metadata.l42.eu/ontology/")
-MMM = Namespace("https://media-api.l42.eu/ontology#")
+MMM = Namespace("https://media-metadata.l42.eu/ontology#")
 EOLAS = Namespace("https://eolas.l42.eu/metadata/")
 
 
