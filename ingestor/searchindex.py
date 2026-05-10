@@ -9,6 +9,7 @@ MO = Namespace("http://purl.org/ontology/mo/")
 LOC_NS = Namespace("http://www.loc.gov/mads/rdf/v1#")
 EOLAS_NS = Namespace(f"https://eolas.l42.eu/ontology/")
 MEDIA_MANAGER_ONTOLOGY = Namespace("https://media-metadata.l42.eu/ontology/")
+MMM = Namespace("https://media-api.l42.eu/ontology#")
 SDO = Namespace("https://schema.org/")
 
 # RDF/OWL types which shouldn't be indexed in search index
@@ -242,9 +243,9 @@ def graph_to_track_docs(graph: Graph):
 		if producers:
 			doc["producer"] = producers
 
-		# language (dc:language) — extract code from URI path
+		# language (mmm:trackLanguage) — extract code from URI path
 		languages = []
-		for o in graph.objects(subj, DCTERMS.language):
+		for o in graph.objects(subj, MMM.trackLanguage):
 			code = _extract_language_code(str(o))
 			if code:
 				languages.append(code)
