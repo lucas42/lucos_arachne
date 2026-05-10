@@ -2,7 +2,7 @@ import express from 'express';
 import net from 'net';
 import rateLimit from 'express-rate-limit';
 import { middleware as authMiddleware } from './auth.js';
-import { processBindings } from './processBindings.js';
+import { processBindings, processPhaseACounts, processPhaseCBindings } from './processBindings.js';
 
 const app = express();
 app.auth = authMiddleware;
@@ -166,29 +166,12 @@ app.get('/search', catchErrors(async (req, res) => {
 	}
 	res.render('search', data);
 }));
-app.get('/item', catchErrors(async (req, res) => {
-	const uri = req.query.uri;
-	if (!uri) {
-		res.redirect(302, '/explore');
-		return;
-	}
-	const requestBody = new URLSearchParams({
-		query: `
-		PREFIX skos: <http://www.w3.org/2004/02/skos/core#>
-		PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
-		SELECT ?predicate ?predicateLabel ?predicateLabelRdfs ?object ?objectLabel ?objectLabelRdfs
-		WHERE {
-			BIND(<${uri}> AS ?subject)
-			?subject ?predicate ?object .
-			OPTIONAL { ?predicate skos:prefLabel ?predicateLabel }.
-			OPTIONAL { ?predicate rdfs:label ?predicateLabelRdfs }.
-			OPTIONAL { ?object skos:prefLabel ?objectLabel . }
-			OPTIONAL { ?object rdfs:label ?objectLabelRdfs . }
-		}
-		ORDER BY COALESCE(?predicateLabel, ?predicateLabelRdfs)
-		LIMIT 1000
-		`,
-	})
+// High-fan-out threshold: predicates with more than this many objects are paginated.
+const HIGH_FAN_OUT_THRESHOLD = 50;
+
+// Shared SPARQL fetch helper for the item page.
+async function sparqlFetch(query) {
+	const requestBody = new URLSearchParams({ query });
 	const response = await fetch("http://triplestore:3030/arachne/", {
 		method: 'POST',
 		headers: {
@@ -197,13 +180,109 @@ app.get('/item', catchErrors(async (req, res) => {
 			"content-type": "application/x-www-form-urlencoded",
 		},
 		signal: AbortSignal.timeout(2900),
-		"body": requestBody.toString(),
+		body: requestBody.toString(),
 	});
 	const data = await response.json();
 	if (!response.ok) {
 		throw new Error(`Recieved ${response.status} error from sparql endpoint: ${data["message"]}`);
 	}
-	const { prefLabel, types, predicates, wikipediaLink } = processBindings(data.results.bindings);
+	return data.results.bindings;
+}
+
+app.get('/item', catchErrors(async (req, res) => {
+	const uri = req.query.uri;
+	if (!uri) {
+		res.redirect(302, '/explore');
+		return;
+	}
+
+	// Phase A: per-predicate object counts and labels (one cheap GROUP BY query).
+	const phaseABindings = await sparqlFetch(`
+		PREFIX skos: <http://www.w3.org/2004/02/skos/core#>
+		PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+		SELECT ?p ?pLabel ?pLabelRdfs (COUNT(?o) AS ?count) WHERE {
+			BIND(<${uri}> AS ?subject)
+			?subject ?p ?o .
+			OPTIONAL { ?p skos:prefLabel ?pLabel }
+			OPTIONAL { ?p rdfs:label ?pLabelRdfs }
+		}
+		GROUP BY ?p ?pLabel ?pLabelRdfs
+	`);
+	const predicateCounts = processPhaseACounts(phaseABindings);
+
+	// Separate predicates into small (≤ threshold) and large (> threshold).
+	const smallPredicates = [];
+	const largePredicates = [];
+	for (const [predUri, { count }] of predicateCounts) {
+		if (count <= HIGH_FAN_OUT_THRESHOLD) {
+			smallPredicates.push(predUri);
+		} else {
+			largePredicates.push(predUri);
+		}
+	}
+
+	// Phase B: fetch objects for all small predicates in one bounded query.
+	// Uses the same variable names as the original query so processBindings works unchanged.
+	let phaseBBindings = [];
+	if (smallPredicates.length > 0) {
+		const valuesClause = smallPredicates.map(p => `<${p}>`).join(' ');
+		phaseBBindings = await sparqlFetch(`
+			PREFIX skos: <http://www.w3.org/2004/02/skos/core#>
+			PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+			SELECT ?predicate ?predicateLabel ?predicateLabelRdfs ?object ?objectLabel ?objectLabelRdfs WHERE {
+				VALUES ?predicate { ${valuesClause} }
+				BIND(<${uri}> AS ?subject)
+				?subject ?predicate ?object .
+				OPTIONAL { ?predicate skos:prefLabel ?predicateLabel }
+				OPTIONAL { ?predicate rdfs:label ?predicateLabelRdfs }
+				OPTIONAL { ?object skos:prefLabel ?objectLabel }
+				OPTIONAL { ?object rdfs:label ?objectLabelRdfs }
+			}
+		`);
+	}
+
+	const { prefLabel, types, predicates, wikipediaLink } = processBindings(phaseBBindings);
+
+	// Annotate every small predicate with its total count (not truncated).
+	for (const predUri of Object.keys(predicates)) {
+		const cd = predicateCounts.get(predUri);
+		predicates[predUri].count = cd ? cd.count : null;
+		predicates[predUri].truncated = false;
+	}
+
+	// Phase C: first N objects for each large predicate, fetched in parallel.
+	// ORDER BY label then URI for deterministic pagination.
+	if (largePredicates.length > 0) {
+		await Promise.all(largePredicates.map(async (predUri) => {
+			const phaseCBindings = await sparqlFetch(`
+				PREFIX skos: <http://www.w3.org/2004/02/skos/core#>
+				PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+				SELECT ?object ?objectLabel ?objectLabelRdfs WHERE {
+					BIND(<${uri}> AS ?subject)
+					?subject <${predUri}> ?object .
+					OPTIONAL { ?object skos:prefLabel ?objectLabel }
+					OPTIONAL { ?object rdfs:label ?objectLabelRdfs }
+				}
+				ORDER BY ASC(COALESCE(?objectLabel, ?objectLabelRdfs, ?object)) ASC(?object)
+				LIMIT ${HIGH_FAN_OUT_THRESHOLD}
+			`);
+
+			const { count, label } = predicateCounts.get(predUri);
+			const values = processPhaseCBindings(phaseCBindings);
+			// Detect the object type from the first binding (used for consistent rendering).
+			const firstObj = phaseCBindings.find(b => b.object.type !== 'bnode');
+			const type = firstObj ? firstObj.object.type : 'uri';
+
+			predicates[predUri] = {
+				label,
+				type,
+				count,
+				truncated: true,
+				values,
+			};
+		}));
+	}
+
 	res.render('item', {
 		uri,
 		types,
