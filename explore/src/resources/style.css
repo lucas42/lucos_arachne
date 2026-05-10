@@ -167,6 +167,18 @@ nav.pagination a {
 	padding: 10px 20px;
 	margin: 0;
 }
+.inline-node {
+	display: grid;
+	grid-template-columns: auto 1fr;
+	column-gap: 0.5em;
+	margin: 0;
+}
+.inline-node dt {
+	font-weight: bold;
+}
+.inline-node dd {
+	margin: 0;
+}
 .lyrics-value {
 	white-space: pre-wrap;
 	font-family: inherit;

@@ -235,6 +235,9 @@ app.get('/search', catchErrors(async (req, res) => {
 // High-fan-out threshold: predicates with more than this many objects are paginated.
 const HIGH_FAN_OUT_THRESHOLD = 50;
 
+// URI prefix assigned to all skolemised blank nodes at ingest time.
+const SKOLEM_PREFIX = 'urn:lucos:skolem:';
+
 // Shared SPARQL fetch helper for the item page.
 async function sparqlFetch(query) {
 	const requestBody = new URLSearchParams({ query });
@@ -253,6 +256,59 @@ async function sparqlFetch(query) {
 		throw new Error(`Recieved ${response.status} error from sparql endpoint: ${data["message"]}`);
 	}
 	return data.results.bindings;
+}
+
+// Expand any predicate values that are urn:lucos:skolem: URIs (i.e. blank nodes
+// assigned a Skolem URI at ingest time) into inline property data.  For each
+// unique skolem URI found in the predicates object, a SPARQL query fetches that
+// node's own predicate/object pairs, and the raw-URI value is replaced with an
+// { inlinePredicates: {...} } object for inline rendering.
+//
+// Values whose skolem node has no labelled predicates are removed entirely.
+// Predicates that end up with no values are also removed.
+// Mutates the predicates object in place.
+async function expandSkolemInline(predicates) {
+	// Collect all unique skolem URIs across every predicate's value list.
+	const skolemUris = new Set();
+	for (const pred of Object.values(predicates)) {
+		for (const value of pred.values) {
+			if (value.uri && value.uri.startsWith(SKOLEM_PREFIX)) {
+				skolemUris.add(value.uri);
+			}
+		}
+	}
+	if (skolemUris.size === 0) return;
+
+	// Fetch properties for each skolem URI in parallel.
+	const skolemData = new Map();
+	await Promise.all([...skolemUris].map(async (skolemUri) => {
+		const bindings = await sparqlFetch(`
+			PREFIX skos: <http://www.w3.org/2004/02/skos/core#>
+			PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+			SELECT ?predicate ?predicateLabel ?predicateLabelRdfs ?object ?objectLabel ?objectLabelRdfs WHERE {
+				BIND(<${skolemUri}> AS ?subject)
+				?subject ?predicate ?object .
+				OPTIONAL { ?predicate skos:prefLabel ?predicateLabel }
+				OPTIONAL { ?predicate rdfs:label ?predicateLabelRdfs }
+				OPTIONAL { ?object skos:prefLabel ?objectLabel }
+				OPTIONAL { ?object rdfs:label ?objectLabelRdfs }
+			}
+		`);
+		const { predicates: inlinePredicates } = processBindings(bindings);
+		skolemData.set(skolemUri, inlinePredicates);
+	}));
+
+	// Replace skolem values with their expanded inline data; remove those with
+	// nothing to show, and drop predicates whose value list becomes empty.
+	for (const [predKey, pred] of Object.entries(predicates)) {
+		pred.values = pred.values.flatMap(value => {
+			if (!value.uri || !value.uri.startsWith(SKOLEM_PREFIX)) return [value];
+			const inlinePredicates = skolemData.get(value.uri) || {};
+			if (Object.keys(inlinePredicates).length === 0) return []; // nothing to show
+			return [{ inlinePredicates }];
+		});
+		if (pred.values.length === 0) delete predicates[predKey];
+	}
 }
 
 app.get('/item', catchErrors(async (req, res) => {
@@ -348,6 +404,10 @@ app.get('/item', catchErrors(async (req, res) => {
 			};
 		}));
 	}
+
+	// Expand any skolem URI values inline before Phase D so containedIn filtering
+	// correctly ignores blank-node values (which wouldn't be place URIs anyway).
+	await expandSkolemInline(predicates);
 
 	// Phase D: topological sort for containedIn places.
 	// The inferred triplestore materialises all transitive containedIn pairs, so

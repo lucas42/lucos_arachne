@@ -53,6 +53,22 @@
 							<li<% if (isLyrics) { %> class="lyrics-value"<% } %>><%
 								if (value.uri) {
 									%><a href="/explore/item?uri=<%= encodeURIComponent(value.uri) %>"><%= value.label %></a><%
+								} else if (value.inlinePredicates) {
+									%><dl class="inline-node"><%
+									for (const [, sp] of Object.entries(value.inlinePredicates)) {
+										%><dt><%= sp.label %></dt><dd><%
+										for (let si = 0; si < sp.values.length; si++) {
+											const sv = sp.values[si];
+											if (si > 0) { %>, <% }
+											if (sv.uri) {
+												%><a href="/explore/item?uri=<%= encodeURIComponent(sv.uri) %>"><%= sv.label %></a><%
+											} else {
+												%><%= sv.label %><%
+											}
+										}
+										%></dd><%
+									}
+									%></dl><%
 								} else {
 									%><%= value.label %><%
 								}
