@@ -47,12 +47,6 @@ async function main() {
 }
 
 main().catch(err => {
-	if (existsSync(OUTPUT_FILE)) {
-		console.warn(`Warning: could not fetch category colours: ${err.message}`);
-		console.warn(`Falling back to existing ${OUTPUT_FILE} — colours may be stale`);
-	} else {
-		console.error(`Error generating category CSS: ${err.message}`);
-		console.error('No seed file to fall back to — build cannot continue');
-		process.exit(1);
-	}
+	console.error(`Error generating category CSS: ${err.message}`);
+	process.exit(1);
 });
