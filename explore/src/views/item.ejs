@@ -46,15 +46,28 @@
 						<%
 						for(var ii = 0; ii < predicate.values.length; ii++) {
 							const value = predicate.values[ii];
-							if (value.uri) {
-								%>
-								<li><a href="/explore/item?uri=<%= encodeURIComponent(value.uri) %>"><%= value.label %></a></li>
-								<%
-							} else {
-								%>
-								<li><%= value.label %></li>
-								<%
-							}
+							%>
+							<li><%
+								if (value.uri) {
+									%><a href="/explore/item?uri=<%= encodeURIComponent(value.uri) %>"><%= value.label %></a><%
+								} else {
+									%><%= value.label %><%
+								}
+								if (value.also && value.also.length > 0) {
+									%> <em>(also: <%
+									for (var ai = 0; ai < value.also.length; ai++) {
+										const alsoVal = value.also[ai];
+										if (ai > 0) { %>, <% }
+										if (alsoVal.uri) {
+											%><a href="/explore/item?uri=<%= encodeURIComponent(alsoVal.uri) %>"><%= alsoVal.label %></a><%
+										} else {
+											%><%= alsoVal.label %><%
+										}
+									}
+									%>)</em><%
+								}
+							%></li>
+							<%
 						}
 						%>
 					</ul>

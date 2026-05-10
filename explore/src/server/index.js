@@ -5,6 +5,7 @@ import { middleware as authMiddleware } from './auth.js';
 import { processBindings, processPhaseACounts, processPhaseCBindings } from './processBindings.js';
 import { computeDisplayLabels } from './disambiguate.js';
 import { formatYearRange } from './formatYearRange.js';
+import { sortContainedIn } from './sortContainedIn.js';
 
 const app = express();
 app.auth = authMiddleware;
@@ -346,6 +347,32 @@ app.get('/item', catchErrors(async (req, res) => {
 				values,
 			};
 		}));
+	}
+
+	// Phase D: topological sort for containedIn places.
+	// The inferred triplestore materialises all transitive containedIn pairs, so
+	// a VALUES-based query over the containedIn value set gives us the full chain
+	// structure we need to sort by depth (most-general first) and detect forks.
+	const CONTAINED_IN_PRED = 'https://eolas.l42.eu/ontology/containedIn';
+	const containedInPred = predicates[CONTAINED_IN_PRED];
+	if (containedInPred) {
+		const uriValues = containedInPred.values.filter(v => v.uri);
+		if (uriValues.length > 1) {
+			const valuesClause = uriValues.map(v => `<${v.uri}>`).join(' ');
+			const chainBindings = await sparqlFetch(`
+				PREFIX eolas: <https://eolas.l42.eu/ontology/>
+				SELECT ?child ?parent WHERE {
+					VALUES ?child { ${valuesClause} }
+					VALUES ?parent { ${valuesClause} }
+					?child eolas:containedIn ?parent .
+				}
+			`);
+			const chainPairs = chainBindings.map(row => ({
+				child: row.child.value,
+				parent: row.parent.value,
+			}));
+			containedInPred.values = sortContainedIn(uriValues, chainPairs);
+		}
 	}
 
 	res.render('item', {
