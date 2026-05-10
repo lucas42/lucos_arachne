@@ -3,13 +3,14 @@
 		<title>LucOs Arachne</title>
 		<meta name="viewport" content="initial-scale=1.0, user-scalable=no, width=device-width" />
 		<link href="/explore/style.css" rel="stylesheet" />
+		<link href="/explore/categories.css" rel="stylesheet" />
 		<link rel="icon" href="/icon.png" />
 		<link rel="manifest" href="/manifest.json" />
 	</head>
 	<body>
 		<lucos-navbar bg-colour="#02666d">Explore Item</lucos-navbar>
 		<a href="/explore">&lt;- Home</a>
-		<div class="module">
+		<div class="module" <% if (category) { %>data-category="<%= category %>"<% } %>>
 			<h2>Data about "<%= prefLabel %>"</h2>
 			<div class='item-info'>
 				<div class='item-links'>

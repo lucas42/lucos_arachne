@@ -3,6 +3,7 @@
 		<title>LucOs Arachne</title>
 		<meta name="viewport" content="initial-scale=1.0, user-scalable=no, width=device-width" />
 		<link href="/explore/style.css" rel="stylesheet" />
+		<link href="/explore/categories.css" rel="stylesheet" />
 		<link rel="icon" href="/icon.png" />
 		<link rel="manifest" href="/manifest.json" />
 	</head>
@@ -16,7 +17,7 @@
 					const result = hits[ii];
 					const uri = result.document.id;
 				%>
-				<li><a href="/explore/item?uri=<%= encodeURIComponent(uri) %>"><%= result.displayLabel %></a></li>
+				<li<% if (result.document.category) { %> data-category="<%= result.document.category %>"<% } %>><% if (result.document.category) { %><span class="category-badge"><%= result.document.category %></span> <% } %><a href="/explore/item?uri=<%= encodeURIComponent(uri) %>"><%= result.displayLabel %></a></li>
 				<% } %>
 			</ul>
 			<span class="count">Showing <%= hits.length %> results out of <%= found %>.  </span>
