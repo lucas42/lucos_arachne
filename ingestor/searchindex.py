@@ -124,6 +124,21 @@ def graph_to_typesense_docs(graph: Graph):
 				doc["lyrics"] = str(o)
 				break
 
+		# contained_in: label of the eolas:containedIn target (for places).
+		# Only set when a containedIn triple exists and its target has a label.
+		for contained_in_uri in graph.objects(subj, EOLAS_NS.containedIn):
+			try:
+				doc["contained_in"] = get_label(graph, contained_in_uri)
+			except ValueError:
+				pass
+			break  # use the first containedIn value only
+
+		# artist: first artist name from foaf:maker search URLs (for tracks, albums, etc.).
+		for maker_uri in graph.objects(subj, FOAF.maker):
+			artist = _extract_search_url_value(str(maker_uri))
+			if artist:
+				doc["artist"] = artist
+				break
 
 		# only include if we have a type and pref_label
 		if doc["type"] and doc["pref_label"]:

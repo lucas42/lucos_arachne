@@ -3,6 +3,7 @@ import net from 'net';
 import rateLimit from 'express-rate-limit';
 import { middleware as authMiddleware } from './auth.js';
 import { processBindings, processPhaseACounts, processPhaseCBindings } from './processBindings.js';
+import { computeDisplayLabels } from './disambiguate.js';
 
 const app = express();
 app.auth = authMiddleware;
@@ -147,7 +148,7 @@ app.get('/search', catchErrors(async (req, res) => {
 		q: req.query.q,
 		query_by: "pref_label,labels,description,lyrics",
 		query_by_weights: "10,8,3,1",
-		include_fields: "id,pref_label,type,labels",
+		include_fields: "id,pref_label,type,labels,contained_in,artist",
 		sort_by: "_text_match:desc,pref_label:asc",
 		prioritize_num_matching_fields: false,
 		enable_highlight_v1: false,
@@ -164,6 +165,8 @@ app.get('/search', catchErrors(async (req, res) => {
 	if (!response.ok) {
 		throw new Error(`Recieved ${response.status} error from search endpoint: ${data["message"]}`);
 	}
+	// Apply disambiguation: compute display labels only where label collisions exist.
+	data.hits = computeDisplayLabels(data.hits);
 	res.render('search', data);
 }));
 // High-fan-out threshold: predicates with more than this many objects are paginated.
