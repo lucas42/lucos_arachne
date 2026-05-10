@@ -135,7 +135,10 @@ app.use(rateLimit({ windowMs: 15 * 60 * 1000, limit: 100 }));
 app.use((req, res, next) => app.auth(req, res, next));
 
 app.get('/', catchErrors(async (req, res) => {
-	res.render('index', {
+	res.render('index');
+}));
+app.get('/sparql-explorer', catchErrors(async (req, res) => {
+	res.render('sparql', {
 		sparql_auth: Buffer.from(`lucos_arachne:${process.env.KEY_LUCOS_ARACHNE}`).toString('base64'),
 	});
 }));

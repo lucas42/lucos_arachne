@@ -1,0 +1,18 @@
+<html>
+	<head>
+		<title>LucOs Arachne - SPARQL Explorer</title>
+		<meta name="viewport" content="initial-scale=1.0, user-scalable=no, width=device-width" />
+		<link href="/explore/style.css" rel="stylesheet" />
+		<link rel="icon" href="/icon.png" />
+		<link rel="manifest" href="/manifest.json" />
+	</head>
+	<body>
+		<lucos-navbar bg-colour="#02666d">SPARQL Explorer</lucos-navbar>
+		<a href="/explore">&lt;- Home</a>
+		<div id='sparql-explorer' class="module">
+			<h2>Sparql Explorer</h2>
+			<div id="yasgui" data-auth="<%= sparql_auth %>"></div>
+		</div>
+		<script type="text/javascript" src="/explore/client.js"></script>
+	</body>
+</html>
