@@ -24,7 +24,7 @@ function getBestLabelValue(prefLabelBinding, rdfsLabelBinding) {
 // This is the dedup-safe version: it collects all label bindings from every row
 // (which may carry different label values due to SPARQL cross-products) and picks
 // the best one using the same preference rules as getBestLabelValue.
-function bestLabelAcrossRows(rows, prefKey, rdfsKey) {
+export function bestLabelAcrossRows(rows, prefKey, rdfsKey) {
 	// Prefer skos:prefLabel bindings first, then rdfs:label
 	const prefBindings = rows.map(r => r[prefKey]).filter(Boolean);
 	const rdfsBindings = rows.map(r => r[rdfsKey]).filter(Boolean);
@@ -112,4 +112,71 @@ export function processBindings(bindings) {
 	}
 
 	return { prefLabel, types, predicates, wikipediaLink };
+}
+
+// Process Phase A count bindings.
+// Accepts rows: { p: uri, pLabel?: literal, pLabelRdfs?: literal, count: literal }
+// Returns Map<predicateURI, { count: number, label: string|null }>
+// Multiple GROUP BY rows for the same predicate (due to multiple label variants) are
+// collapsed by taking the max count and picking the best label across all rows.
+export function processPhaseACounts(bindings) {
+	const groups = new Map(); // predicateURI -> { count, rows[] }
+	for (const row of bindings) {
+		const predUri = row.p.value;
+		const count = parseInt(row.count.value, 10);
+		if (!groups.has(predUri)) {
+			groups.set(predUri, { count: 0, rows: [] });
+		}
+		const g = groups.get(predUri);
+		g.count = Math.max(g.count, count);
+		g.rows.push(row);
+	}
+	const result = new Map();
+	for (const [predUri, { count, rows }] of groups) {
+		const label = bestLabelAcrossRows(rows, 'pLabel', 'pLabelRdfs');
+		result.set(predUri, { count, label });
+	}
+	return result;
+}
+
+// Process Phase C bindings for a single high-fan-out predicate.
+// Accepts rows: { object: uri|literal, objectLabel?: literal, objectLabelRdfs?: literal }
+// Returns a deduplicated, alphabetically-sorted values array (same shape as
+// processBindings's predicate.values entries).
+export function processPhaseCBindings(bindings) {
+	const groups = new Map(); // objectValue -> { object, rows[] }
+	for (const row of bindings) {
+		const key = row.object.value;
+		if (!groups.has(key)) {
+			groups.set(key, { object: row.object, rows: [] });
+		}
+		groups.get(key).rows.push(row);
+	}
+
+	const values = [];
+	for (const { object, rows } of groups.values()) {
+		if (object.type === 'bnode') continue;
+		let value;
+		switch (object.type) {
+			case 'literal':
+				value = { label: object.value || 'unknown' };
+				break;
+			case 'uri':
+				value = {
+					uri: object.value,
+					label: bestLabelAcrossRows(rows, 'objectLabel', 'objectLabelRdfs') || object.value || 'unknown',
+				};
+				break;
+			default:
+				throw new Error(`Can't render object type ${object.type}`);
+		}
+		values.push(value);
+	}
+
+	// Sort alphabetically by label (non-word chars ignored), consistent with processBindings.
+	values.sort((a, b) =>
+		a.label.replace(/\W/g, '').localeCompare(b.label.replace(/\W/g, ''))
+	);
+
+	return values;
 }

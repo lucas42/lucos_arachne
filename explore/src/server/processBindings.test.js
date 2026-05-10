@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { processBindings } from './processBindings.js';
+import { processBindings, processPhaseACounts, processPhaseCBindings } from './processBindings.js';
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
 
@@ -214,4 +214,127 @@ test('sorts values within a predicate alphabetically', () => {
 	const { predicates } = processBindings(bindings);
 	const labels = predicates[SOME_PRED].values.map(v => v.label);
 	assert.deepEqual(labels, ['Antelope', 'Meerkat', 'Zebra']);
+});
+
+// ─── processPhaseACounts tests ────────────────────────────────────────────────
+
+test('processPhaseACounts: returns count and label for a simple predicate', () => {
+	const bindings = [
+		{
+			p: { type: 'uri', value: CONTAINED_IN },
+			pLabel: literal('Contained In'),
+			count: literal('42'),
+		},
+	];
+	const counts = processPhaseACounts(bindings);
+	assert.equal(counts.get(CONTAINED_IN).count, 42);
+	assert.equal(counts.get(CONTAINED_IN).label, 'Contained In');
+});
+
+test('processPhaseACounts: collapses multiple GROUP BY rows for same predicate (label cross-product)', () => {
+	// A predicate with 2 rdfs:label values produces 2 GROUP BY rows, each with count=7.
+	const bindings = [
+		{ p: { type: 'uri', value: CONTAINED_IN }, pLabelRdfs: literal('ContainedIn'), count: literal('7') },
+		{ p: { type: 'uri', value: CONTAINED_IN }, pLabelRdfs: literal('Is inside'), count: literal('7') },
+	];
+	const counts = processPhaseACounts(bindings);
+	assert.equal(counts.size, 1, 'should collapse to a single predicate entry');
+	assert.equal(counts.get(CONTAINED_IN).count, 7);
+});
+
+test('processPhaseACounts: prefers skos:prefLabel over rdfs:label', () => {
+	const bindings = [
+		{
+			p: { type: 'uri', value: CONTAINED_IN },
+			pLabel: literal('Contained In'),
+			pLabelRdfs: literal('is inside'),
+			count: literal('5'),
+		},
+	];
+	const counts = processPhaseACounts(bindings);
+	assert.equal(counts.get(CONTAINED_IN).label, 'Contained In');
+});
+
+test('processPhaseACounts: returns null label when no label bindings present', () => {
+	const bindings = [
+		{ p: { type: 'uri', value: CONTAINED_IN }, count: literal('3') },
+	];
+	const counts = processPhaseACounts(bindings);
+	assert.equal(counts.get(CONTAINED_IN).label, null);
+});
+
+test('processPhaseACounts: handles multiple distinct predicates', () => {
+	const SOME_PRED = 'http://example.org/prop';
+	const bindings = [
+		{ p: { type: 'uri', value: CONTAINED_IN }, pLabel: literal('Contained In'), count: literal('5') },
+		{ p: { type: 'uri', value: SOME_PRED }, pLabel: literal('My Prop'), count: literal('100') },
+	];
+	const counts = processPhaseACounts(bindings);
+	assert.equal(counts.size, 2);
+	assert.equal(counts.get(CONTAINED_IN).count, 5);
+	assert.equal(counts.get(SOME_PRED).count, 100);
+});
+
+test('processPhaseACounts: returns empty Map for empty bindings', () => {
+	const counts = processPhaseACounts([]);
+	assert.equal(counts.size, 0);
+});
+
+// ─── processPhaseCBindings tests ─────────────────────────────────────────────
+
+test('processPhaseCBindings: returns sorted values for URI objects', () => {
+	const bindings = [
+		{ object: { type: 'uri', value: 'http://example.org/zebra' }, objectLabel: literal('Zebra') },
+		{ object: { type: 'uri', value: 'http://example.org/ant' }, objectLabel: literal('Ant') },
+		{ object: { type: 'uri', value: 'http://example.org/meerkat' }, objectLabel: literal('Meerkat') },
+	];
+	const values = processPhaseCBindings(bindings);
+	const labels = values.map(v => v.label);
+	assert.deepEqual(labels, ['Ant', 'Meerkat', 'Zebra']);
+});
+
+test('processPhaseCBindings: deduplicates rows for same object URI (label cross-product)', () => {
+	// Same object URI appears twice with different label variants.
+	const bindings = [
+		{ object: { type: 'uri', value: LONDON }, objectLabel: literal('London'), objectLabelRdfs: literal('Londinium') },
+		{ object: { type: 'uri', value: LONDON }, objectLabel: literal('London'), objectLabelRdfs: literal('Llundein') },
+	];
+	const values = processPhaseCBindings(bindings);
+	assert.equal(values.length, 1, 'should deduplicate to a single entry');
+	assert.equal(values[0].label, 'London');
+});
+
+test('processPhaseCBindings: skips blank nodes', () => {
+	const bindings = [
+		{ object: { type: 'bnode', value: 'b0' } },
+		{ object: { type: 'uri', value: 'http://example.org/real' }, objectLabel: literal('Real') },
+	];
+	const values = processPhaseCBindings(bindings);
+	assert.equal(values.length, 1, 'blank node should be filtered out');
+	assert.equal(values[0].label, 'Real');
+});
+
+test('processPhaseCBindings: uses object URI as fallback label when no label present', () => {
+	const SOME_URI = 'http://example.org/unlabelled';
+	const bindings = [
+		{ object: { type: 'uri', value: SOME_URI } },
+	];
+	const values = processPhaseCBindings(bindings);
+	assert.equal(values[0].label, SOME_URI);
+	assert.equal(values[0].uri, SOME_URI);
+});
+
+test('processPhaseCBindings: handles literal objects', () => {
+	const bindings = [
+		{ object: { type: 'literal', value: 'Hello world' } },
+	];
+	const values = processPhaseCBindings(bindings);
+	assert.equal(values.length, 1);
+	assert.equal(values[0].label, 'Hello world');
+	assert.ok(!values[0].uri, 'literals should not have a uri property');
+});
+
+test('processPhaseCBindings: returns empty array for empty bindings', () => {
+	const values = processPhaseCBindings([]);
+	assert.deepEqual(values, []);
 });

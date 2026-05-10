@@ -32,11 +32,16 @@
 					}
 					%>
 				</ul>
-				<% 
+				<%
 				for (let key in predicates) {
 					const predicate = predicates[key];
 					%>
-					<h3 class="predicate-label"><%= predicate.label %></h3>
+					<h3 class="predicate-label">
+						<%= predicate.label %>
+						<% if (predicate.count !== null && predicate.count !== undefined) { %>
+							<span class="predicate-count">(<%= predicate.count.toLocaleString() %>)</span>
+						<% } %>
+					</h3>
 					<ul>
 						<%
 						for(var ii = 0; ii < predicate.values.length; ii++) {
@@ -53,6 +58,11 @@
 						}
 						%>
 					</ul>
+					<% if (predicate.truncated) { %>
+						<p class="see-all">
+							<a href="/explore/predicate-objects?uri=<%= encodeURIComponent(uri) %>&predicate=<%= encodeURIComponent(key) %>">See all <%= predicate.count.toLocaleString() %> &rarr;</a>
+						</p>
+					<% } %>
 					<%
 				}
 				%>
