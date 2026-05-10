@@ -17,7 +17,7 @@ RUN apt-get update && \
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
-HEALTHCHECK --start-period=30s --start-interval=1s CMD curl --silent --fail http://localhost:$PORT/health || exit 1
+HEALTHCHECK --start-period=300s --start-interval=1s CMD curl --silent --fail http://127.0.0.1:8108/health || exit 1
 
 # Set the entrypoint
 ENTRYPOINT ["/entrypoint.sh"]
