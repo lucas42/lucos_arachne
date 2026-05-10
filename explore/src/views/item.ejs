@@ -33,8 +33,10 @@
 					%>
 				</ul>
 				<%
+				const MO_LYRICS = 'http://purl.org/ontology/mo/lyrics';
 				for (let key in predicates) {
 					const predicate = predicates[key];
+					const isLyrics = key === MO_LYRICS;
 					%>
 					<h3 class="predicate-label">
 						<%= predicate.label %>
@@ -47,7 +49,7 @@
 						for(var ii = 0; ii < predicate.values.length; ii++) {
 							const value = predicate.values[ii];
 							%>
-							<li><%
+							<li<% if (isLyrics) { %> class="lyrics-value"<% } %>><%
 								if (value.uri) {
 									%><a href="/explore/item?uri=<%= encodeURIComponent(value.uri) %>"><%= value.label %></a><%
 								} else {

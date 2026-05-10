@@ -140,3 +140,8 @@ nav.pagination a {
 	padding: 10px 20px;
 	margin: 0;
 }
+.lyrics-value {
+	white-space: pre-wrap;
+	font-family: inherit;
+	list-style: none;
+}
