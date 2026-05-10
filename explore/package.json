@@ -4,7 +4,7 @@
   "description": "UI for lucoOS knowledge graph",
   "type": "module",
   "scripts": {
-    "test": "node --test src/server/processBindings.test.js",
+    "test": "node --test src/server/processBindings.test.js src/server/disambiguate.test.js",
     "build": "webpack",
     "start": "node server/index.js"
   },

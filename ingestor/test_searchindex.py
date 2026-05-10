@@ -400,3 +400,111 @@ def test_graph_to_typesense_docs_skips_subject_without_pref_label():
     g.add((cat_uri, SKOS.prefLabel, Literal("Technological")))
     docs = graph_to_typesense_docs(g)
     assert docs == []
+
+
+# ---------------------------------------------------------------------------
+# graph_to_typesense_docs — disambiguation fields (contained_in, artist)
+# ---------------------------------------------------------------------------
+
+EOLAS_ONTOLOGY = Namespace("https://eolas.l42.eu/ontology/")
+
+
+def _make_place_graph(place_uri, place_label, contained_in_uri=None, contained_in_label=None):
+    """Build a minimal graph for a Place-type item with optional containedIn."""
+    g = Graph()
+    subj = URIRef(place_uri)
+    type_uri = URIRef("https://eolas.l42.eu/ontology/City")
+    cat_uri = URIRef("https://eolas.l42.eu/ontology/Anthropogeographical")
+    g.add((subj, RDF.type, type_uri))
+    g.add((subj, SKOS.prefLabel, Literal(place_label)))
+    g.add((type_uri, SKOS.prefLabel, Literal("City")))
+    g.add((type_uri, EOLAS_NS.hasCategory, cat_uri))
+    g.add((cat_uri, SKOS.prefLabel, Literal("Anthropogeographical")))
+    if contained_in_uri and contained_in_label:
+        c_uri = URIRef(contained_in_uri)
+        g.add((subj, EOLAS_ONTOLOGY.containedIn, c_uri))
+        g.add((c_uri, SKOS.prefLabel, Literal(contained_in_label)))
+    return g
+
+
+def test_graph_to_typesense_docs_contained_in_populated_for_place():
+    """contained_in field is set to the label of the containedIn target for places."""
+    g = _make_place_graph(
+        "https://eolas.l42.eu/metadata/place/springfield-il/",
+        "Springfield",
+        contained_in_uri="https://eolas.l42.eu/metadata/place/illinois/",
+        contained_in_label="Illinois",
+    )
+    docs = graph_to_typesense_docs(g)
+    # There are two subjects (Springfield + Illinois type info); find Springfield doc
+    springfield = next(d for d in docs if d["pref_label"] == "Springfield")
+    assert springfield["contained_in"] == "Illinois"
+
+
+def test_graph_to_typesense_docs_contained_in_absent_when_no_containedIn():
+    """contained_in is absent when the subject has no eolas:containedIn triple."""
+    g = _make_place_graph(
+        "https://eolas.l42.eu/metadata/place/london/",
+        "London",
+    )
+    docs = graph_to_typesense_docs(g)
+    london = next(d for d in docs if d["pref_label"] == "London")
+    assert "contained_in" not in london
+
+
+def test_graph_to_typesense_docs_contained_in_absent_when_target_has_no_label():
+    """contained_in is absent when the containedIn target URI has no label in the graph."""
+    g = _make_place_graph(
+        "https://eolas.l42.eu/metadata/place/somewhere/",
+        "Somewhere",
+    )
+    # Add containedIn triple but NO label for the target
+    subj = URIRef("https://eolas.l42.eu/metadata/place/somewhere/")
+    target = URIRef("https://eolas.l42.eu/metadata/place/unlabelled/")
+    g.add((subj, EOLAS_ONTOLOGY.containedIn, target))
+    docs = graph_to_typesense_docs(g)
+    somewhere = next(d for d in docs if d["pref_label"] == "Somewhere")
+    assert "contained_in" not in somewhere
+
+
+def test_graph_to_typesense_docs_artist_populated_from_foaf_maker():
+    """artist field is set from the foaf:maker search URL for items with a maker."""
+    g = _make_track_graph(
+        "http://example.com/track/yesterday",
+        "Yesterday",
+        **{FOAF.maker: URIRef("https://media-metadata.l42.eu/search?p.artist=The%20Beatles")},
+    )
+    docs = graph_to_track_docs(g)  # this adds to tracks collection
+    # For the items collection, we test graph_to_typesense_docs separately
+    # Need a proper items-compatible graph (not mo:Track which gets skipped by items indexer
+    # if its type is in IGNORE_TYPES — but mo:Track is not in IGNORE_TYPES so it IS indexed)
+    # Re-build using graph_to_typesense_docs on the same graph
+    # First add type metadata required by graph_to_typesense_docs
+    from rdflib import URIRef as U
+    MO_LOCAL = Namespace("http://purl.org/ontology/mo/")
+    g2 = Graph()
+    subj = URIRef("http://example.com/track/yesterday")
+    track_type = MO_LOCAL.Track
+    cat_uri = URIRef("https://eolas.l42.eu/ontology/Music")
+    g2.add((subj, RDF.type, track_type))
+    g2.add((subj, SKOS.prefLabel, Literal("Yesterday")))
+    g2.add((subj, FOAF.maker, URIRef("https://media-metadata.l42.eu/search?p.artist=The%20Beatles")))
+    g2.add((track_type, SKOS.prefLabel, Literal("Track")))
+    g2.add((track_type, EOLAS_NS.hasCategory, cat_uri))
+    g2.add((cat_uri, SKOS.prefLabel, Literal("Music")))
+    docs2 = graph_to_typesense_docs(g2)
+    assert len(docs2) == 1
+    assert docs2[0]["artist"] == "The Beatles"
+
+
+def test_graph_to_typesense_docs_artist_absent_when_no_foaf_maker():
+    """artist field is absent when the subject has no foaf:maker triple."""
+    g = _make_item_graph(
+        "https://eolas.l42.eu/metadata/vehicle/mallard/",
+        "https://eolas.l42.eu/metadata/transportmode/train/",
+        "Train",
+        "Mallard",
+    )
+    docs = graph_to_typesense_docs(g)
+    doc = next(d for d in docs if d["pref_label"] == "Mallard")
+    assert "artist" not in doc

@@ -89,9 +89,24 @@ for EXISTING_SYSTEM in $EXISTING_SYSTEMS; do
 done
 
 # Check if collection already exists
-if curl -s -H "X-TYPESENSE-API-KEY: ${TYPESENSE_ADMIN_KEY}" \
-	"${TYPESENSE_URL}/collections/items" | grep -q '"name":"items"'; then
-	echo "Collection 'items' already exists, skipping schema creation and overrides."
+ITEMS_COLLECTION_JSON=$(curl -s -H "X-TYPESENSE-API-KEY: ${TYPESENSE_ADMIN_KEY}" \
+	"${TYPESENSE_URL}/collections/items")
+if echo "$ITEMS_COLLECTION_JSON" | grep -q '"name":"items"'; then
+	echo "Collection 'items' already exists. Checking for missing optional fields..."
+	EXISTING_FIELDS=$(echo "$ITEMS_COLLECTION_JSON" | jq -r '.fields[].name' 2>/dev/null)
+	for FIELD_NAME in contained_in artist; do
+		if echo "$EXISTING_FIELDS" | grep -q "^${FIELD_NAME}$"; then
+			echo "  Field '${FIELD_NAME}' already present."
+		else
+			echo "  Adding missing field '${FIELD_NAME}'..."
+			curl -X PATCH "${TYPESENSE_URL}/collections/items" \
+				-H "X-TYPESENSE-API-KEY: ${TYPESENSE_ADMIN_KEY}" \
+				-H "Content-Type: application/json" \
+				-d "{\"fields\": [{\"name\": \"${FIELD_NAME}\", \"type\": \"string\", \"optional\": true}]}" \
+				--silent --show-error --fail-with-body
+			echo "  Field '${FIELD_NAME}' added."
+		fi
+	done
 else
 	echo "Creating 'items' collection..."
 	curl -X POST "${TYPESENSE_URL}/collections" \
@@ -106,7 +121,9 @@ else
 				{"name": "labels", "type": "string[]", "optional": true, "full_text_search": true},
 				{"name": "description", "type": "string", "optional": true, "full_text_search": true},
 				{"name": "lyrics", "type": "string", "optional": true, "full_text_search": true},
-				{"name": "lang_family", "type": "string", "optional": true}
+				{"name": "lang_family", "type": "string", "optional": true},
+				{"name": "contained_in", "type": "string", "optional": true},
+				{"name": "artist", "type": "string", "optional": true}
 			],
 			"default_sorting_field":"pref_label"
 		}' --silent --show-error --fail-with-body
