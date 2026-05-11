@@ -72,6 +72,28 @@ describe('validateIri', () => {
 		);
 	});
 
+	// ── Non-string types (Express repeated params) ────────────────────────────
+
+	it('rejects an array (Express parses repeated ?param= as an array)', () => {
+		// ?uri=https://ok.com&uri=https://evil.com>injected →
+		// req.query.uri = ['https://ok.com', 'https://evil.com>injected']
+		// Array.prototype.includes checks element equality, not substring —
+		// without a typeof guard the injection would pass undetected.
+		assert.throws(
+			() => validateIri(['https://ok.com', 'https://evil.com>injected'], 'uri'),
+			(err) => err.status === 400,
+		);
+	});
+
+	it('rejects an array even when all elements look safe', () => {
+		// Any non-string type is rejected; coercing to string creates an
+		// unexpected value (comma-joined) that was never individually validated.
+		assert.throws(
+			() => validateIri(['https://ok.com', 'https://also-ok.com'], 'uri'),
+			(err) => err.status === 400,
+		);
+	});
+
 	// ── Missing / empty value ─────────────────────────────────────────────────
 
 	it('rejects undefined', () => {

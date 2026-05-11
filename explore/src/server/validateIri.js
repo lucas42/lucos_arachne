@@ -12,7 +12,7 @@
  * @throws {Error} With `status: 400` if the value is absent or unsafe.
  */
 export function validateIri(value, paramName) {
-	if (!value || value.includes('>') || /\s/.test(value)) {
+	if (!value || typeof value !== 'string' || value.includes('>') || /\s/.test(value)) {
 		const err = new Error(`Invalid IRI in query parameter '${paramName}'`);
 		err.status = 400;
 		throw err;
