@@ -41,7 +41,7 @@
 					%>
 					<h3 class="predicate-label">
 						<%= predicate.label %>
-						<% if (predicate.count !== null && predicate.count !== undefined) { %>
+						<% if (predicate.truncated) { %>
 							<span class="predicate-count">(<%= predicate.count.toLocaleString() %>)</span>
 						<% } %>
 					</h3>
