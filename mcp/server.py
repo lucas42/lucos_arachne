@@ -53,6 +53,11 @@ TYPESENSE_API_KEY = os.environ.get("KEY_LUCOS_ARACHNE", "")
 TRIPLESTORE_SPARQL_URL = "http://triplestore:3030/arachne/sparql"
 TRIPLESTORE_AUTH = ("lucos_arachne", os.environ.get("KEY_LUCOS_ARACHNE", ""))
 
+# Per-tool query budgets — all strictly below Fuseki's 30 s service-loop guard.
+_BUDGET_RESOLVE_S = 5   # cheap LIMIT-1 resolver queries
+_BUDGET_QUERY_S = 10    # main per-tool queries
+_BUDGET_HEALTH_S = 3    # trivial health probe
+
 # FastMCP's DNS rebinding protection defaults to localhost-only allowed hosts.
 # Add the service's public hostname so external clients can reach /mcp.
 _allowed_hosts = ["127.0.0.1:*", "localhost:*", "[::1]:*"]
@@ -78,6 +83,96 @@ mcp = FastMCP(
 )
 
 
+# ---------------------------------------------------------------------------
+# Triplestore error types and SPARQL helper
+# ---------------------------------------------------------------------------
+
+class _TriplestoreTimeout(Exception):
+    """Raised by _run_sparql when a SPARQL query exceeds its per-tool budget."""
+    def __init__(self, budget_secs: float):
+        self.budget_secs = budget_secs
+
+
+class _TriplestoreUnavailable(Exception):
+    """Raised by _run_sparql when the triplestore returns a 503 response."""
+    def __init__(self, likely_outage: bool):
+        self.likely_outage = likely_outage
+
+
+def _check_fuseki_health() -> bool:
+    """
+    Probe Fuseki with a trivial ASK query.
+
+    Returns True if Fuseki is reachable and returns a 2xx/4xx response,
+    False on any connection error, timeout, or 5xx response.
+    """
+    try:
+        resp = requests.get(
+            TRIPLESTORE_SPARQL_URL,
+            params={"query": "ASK {}", "format": "json"},
+            auth=TRIPLESTORE_AUTH,
+            timeout=_BUDGET_HEALTH_S,
+        )
+        return resp.status_code < 500
+    except Exception:
+        return False
+
+
+def _run_sparql(query: str, timeout: float) -> dict:
+    """
+    Execute a SPARQL query against the triplestore and return the parsed JSON.
+
+    Args:
+        query: The SPARQL query string.
+        timeout: Maximum seconds to wait for a response.
+
+    Raises:
+        _TriplestoreTimeout: if the request exceeds *timeout*.
+        _TriplestoreUnavailable: if the triplestore returns 503.
+    """
+    try:
+        response = requests.get(
+            TRIPLESTORE_SPARQL_URL,
+            params={"query": query, "format": "json"},
+            auth=TRIPLESTORE_AUTH,
+            timeout=timeout,
+        )
+    except requests.exceptions.Timeout:
+        raise _TriplestoreTimeout(timeout)
+
+    if response.status_code == 503:
+        likely_outage = not _check_fuseki_health()
+        raise _TriplestoreUnavailable(likely_outage)
+
+    response.raise_for_status()
+    return response.json()
+
+
+def _sparql_timeout_error(tool_name: str, budget_secs: float) -> str:
+    """Return a structured user-facing message for a SPARQL query timeout."""
+    return (
+        f"The {tool_name} query timed out after {budget_secs:.0f} s. "
+        f"This limit is set by the MCP tool to stay within Fuseki's service guard. "
+        f"Try a more specific query or reduce the limit."
+    )
+
+
+def _sparql_503_error(tool_name: str, likely_outage: bool) -> str:
+    """Return a structured user-facing message for a SPARQL 503 response."""
+    if likely_outage:
+        return (
+            f"The {tool_name} query returned a service error (503) and "
+            f"a health probe suggests Fuseki may be unavailable. "
+            f"Please try again later."
+        )
+    return (
+        f"The {tool_name} query returned a service error (503). "
+        f"Fuseki appears reachable, so this is likely a query-level issue "
+        f"(e.g. too complex for the current dataset size). "
+        f"Try a more specific query or reduce the limit."
+    )
+
+
 @mcp.tool()
 def search(query: str, filter_by: Optional[str] = None, limit: int = 10) -> str:
     """
@@ -98,12 +193,18 @@ def search(query: str, filter_by: Optional[str] = None, limit: int = 10) -> str:
     if filter_by:
         params["filter_by"] = filter_by
 
-    response = requests.get(
-        f"{TYPESENSE_URL}/collections/items/documents/search",
-        params=params,
-        headers={"X-TYPESENSE-API-KEY": TYPESENSE_API_KEY},
-        timeout=10,
-    )
+    try:
+        response = requests.get(
+            f"{TYPESENSE_URL}/collections/items/documents/search",
+            params=params,
+            headers={"X-TYPESENSE-API-KEY": TYPESENSE_API_KEY},
+            timeout=10,
+        )
+    except requests.exceptions.Timeout:
+        return (
+            "The search query timed out. "
+            "This may indicate the search index is under load — try again in a moment."
+        )
     response.raise_for_status()
     data = response.json()
 
@@ -188,14 +289,12 @@ def get_entity(uri: str) -> str:
     ORDER BY ?p ?o ?bp
     """
 
-    response = requests.get(
-        TRIPLESTORE_SPARQL_URL,
-        params={"query": query, "format": "json"},
-        auth=TRIPLESTORE_AUTH,
-        timeout=30,
-    )
-    response.raise_for_status()
-    data = response.json()
+    try:
+        data = _run_sparql(query, _BUDGET_QUERY_S)
+    except _TriplestoreTimeout as e:
+        return _sparql_timeout_error("get_entity", e.budget_secs)
+    except _TriplestoreUnavailable as e:
+        return _sparql_503_error("get_entity", e.likely_outage)
 
     bindings = data.get("results", {}).get("bindings", [])
     if not bindings:
@@ -285,14 +384,12 @@ def list_types() -> str:
     ORDER BY DESC(?count)
     """
 
-    response = requests.get(
-        TRIPLESTORE_SPARQL_URL,
-        params={"query": query, "format": "json"},
-        auth=TRIPLESTORE_AUTH,
-        timeout=60,
-    )
-    response.raise_for_status()
-    data = response.json()
+    try:
+        data = _run_sparql(query, _BUDGET_QUERY_S)
+    except _TriplestoreTimeout as e:
+        return _sparql_timeout_error("list_types", e.budget_secs)
+    except _TriplestoreUnavailable as e:
+        return _sparql_503_error("list_types", e.likely_outage)
 
     bindings = data.get("results", {}).get("bindings", [])
     if not bindings:
@@ -376,14 +473,7 @@ def _resolve_type_uri(type_name: str) -> tuple[Optional[str], Optional[str]]:
     LIMIT 1
     """ % (type_name, type_name, type_name)
 
-    response = requests.get(
-        TRIPLESTORE_SPARQL_URL,
-        params={"query": query, "format": "json"},
-        auth=TRIPLESTORE_AUTH,
-        timeout=30,
-    )
-    response.raise_for_status()
-    data = response.json()
+    data = _run_sparql(query, _BUDGET_RESOLVE_S)
 
     bindings = data.get("results", {}).get("bindings", [])
     if not bindings:
@@ -425,14 +515,7 @@ def _resolve_property_uri(prop_name: str) -> tuple[Optional[str], Optional[str]]
     LIMIT 1
     """ % (prop_name, prop_name)
 
-    response = requests.get(
-        TRIPLESTORE_SPARQL_URL,
-        params={"query": query, "format": "json"},
-        auth=TRIPLESTORE_AUTH,
-        timeout=30,
-    )
-    response.raise_for_status()
-    data = response.json()
+    data = _run_sparql(query, _BUDGET_RESOLVE_S)
 
     bindings = data.get("results", {}).get("bindings", [])
     if not bindings:
@@ -469,80 +552,78 @@ def find_entities(
                  Multiple filters are AND-ed together.
                  Example: [{"property": "containedIn", "value": "https://example.org/usa"}]
     """
-    # Resolve the type to a URI
-    type_uri, type_err = _resolve_type_uri(type)
-    if type_err:
-        return type_err
+    try:
+        # Resolve the type to a URI
+        type_uri, type_err = _resolve_type_uri(type)
+        if type_err:
+            return type_err
 
-    # Resolve requested property names to URIs
-    resolved_props: list[tuple[str, str]] = []  # (prop_name, prop_uri)
-    if properties:
-        for prop_name in properties:
-            prop_uri, prop_err = _resolve_property_uri(prop_name)
-            if prop_err:
-                return f"Could not resolve property '{prop_name}': {prop_err}"
-            resolved_props.append((prop_name, prop_uri))
+        # Resolve requested property names to URIs
+        resolved_props: list[tuple[str, str]] = []  # (prop_name, prop_uri)
+        if properties:
+            for prop_name in properties:
+                prop_uri, prop_err = _resolve_property_uri(prop_name)
+                if prop_err:
+                    return f"Could not resolve property '{prop_name}': {prop_err}"
+                resolved_props.append((prop_name, prop_uri))
 
-    # Resolve and validate filters
-    filter_clauses = ""
-    if filters:
-        for f in filters:
-            filter_prop = f.get("property", "")
-            filter_value = f.get("value", "")
+        # Resolve and validate filters
+        filter_clauses = ""
+        if filters:
+            for f in filters:
+                filter_prop = f.get("property", "")
+                filter_value = f.get("value", "")
 
-            filter_prop_uri, filter_prop_err = _resolve_property_uri(filter_prop)
-            if filter_prop_err:
-                return f"Could not resolve filter property '{filter_prop}': {filter_prop_err}"
+                filter_prop_uri, filter_prop_err = _resolve_property_uri(filter_prop)
+                if filter_prop_err:
+                    return f"Could not resolve filter property '{filter_prop}': {filter_prop_err}"
 
-            if _is_uri(filter_value):
-                err = _validate_uri_for_sparql(filter_value)
-                if err:
-                    return f"Invalid filter value: {err}"
-                sparql_value = f"<{filter_value}>"
-            else:
-                err = _validate_label_for_sparql(filter_value)
-                if err:
-                    return f"Invalid filter value: {err}"
-                sparql_value = f'"{filter_value}"'
+                if _is_uri(filter_value):
+                    err = _validate_uri_for_sparql(filter_value)
+                    if err:
+                        return f"Invalid filter value: {err}"
+                    sparql_value = f"<{filter_value}>"
+                else:
+                    err = _validate_label_for_sparql(filter_value)
+                    if err:
+                        return f"Invalid filter value: {err}"
+                    sparql_value = f'"{filter_value}"'
 
-            filter_clauses += f"\n                ?s <{filter_prop_uri}> {sparql_value} ."
+                filter_clauses += f"\n                ?s <{filter_prop_uri}> {sparql_value} ."
 
-    # Build the SPARQL query
-    optional_clauses = ""
-    select_vars = "?s ?label"
-    for i, (_, prop_uri) in enumerate(resolved_props):
-        var = f"?val{i}"
-        select_vars += f" {var}"
-        optional_clauses += f"\n    OPTIONAL {{ ?s <{prop_uri}> {var} . }}"
+        # Build the SPARQL query
+        optional_clauses = ""
+        select_vars = "?s ?label"
+        for i, (_, prop_uri) in enumerate(resolved_props):
+            var = f"?val{i}"
+            select_vars += f" {var}"
+            optional_clauses += f"\n    OPTIONAL {{ ?s <{prop_uri}> {var} . }}"
 
-    query = f"""
-    PREFIX skos: <http://www.w3.org/2004/02/skos/core#>
-    PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+        query = f"""
+        PREFIX skos: <http://www.w3.org/2004/02/skos/core#>
+        PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
 
-    SELECT {select_vars} WHERE {{
-        {{
-            SELECT DISTINCT ?s WHERE {{
-                ?s a <{type_uri}> .{filter_clauses}
+        SELECT {select_vars} WHERE {{
+            {{
+                SELECT DISTINCT ?s WHERE {{
+                    ?s a <{type_uri}> .{filter_clauses}
+                }}
+                LIMIT {limit}
             }}
-            LIMIT {limit}
+            OPTIONAL {{
+                {{ ?s skos:prefLabel ?label }}
+                UNION
+                {{ ?s rdfs:label ?label }}
+            }}{optional_clauses}
         }}
-        OPTIONAL {{
-            {{ ?s skos:prefLabel ?label }}
-            UNION
-            {{ ?s rdfs:label ?label }}
-        }}{optional_clauses}
-    }}
-    ORDER BY ?label ?s
-    """
+        ORDER BY ?label ?s
+        """
 
-    response = requests.get(
-        TRIPLESTORE_SPARQL_URL,
-        params={"query": query, "format": "json"},
-        auth=TRIPLESTORE_AUTH,
-        timeout=30,
-    )
-    response.raise_for_status()
-    data = response.json()
+        data = _run_sparql(query, _BUDGET_QUERY_S)
+    except _TriplestoreTimeout as e:
+        return _sparql_timeout_error("find_entities", e.budget_secs)
+    except _TriplestoreUnavailable as e:
+        return _sparql_503_error("find_entities", e.likely_outage)
 
     bindings = data.get("results", {}).get("bindings", [])
     if not bindings:
@@ -599,57 +680,56 @@ def count_by_property(type: str, property: str) -> str:
         property: The property name or URI to check (e.g. "lyrics",
                   "https://schema.org/lyrics").
     """
-    # Resolve the type to a URI
-    type_uri, type_err = _resolve_type_uri(type)
-    if type_err:
-        return type_err
-
-    # Resolve the property to a URI
-    prop_uri, prop_err = _resolve_property_uri(property)
-    if prop_err:
-        return prop_err
-
-    # Two separate queries to keep both shapes simple and cheap.
-    #
-    # A single combined query with an OPTIONAL block is tempting but a trap:
-    # if the OPTIONAL doesn't share a bound variable with the outer pattern,
-    # Fuseki materialises a Cartesian product (instances × instances-with-prop)
-    # and the 30 s service guard fires long before the query returns. See #477.
-    total_query = f"""
-    SELECT (COUNT(DISTINCT ?s) AS ?total)
-    WHERE {{
-        ?s a <{type_uri}> .
-    }}
-    """
-
-    with_prop_query = f"""
-    SELECT (COUNT(DISTINCT ?s) AS ?withProp)
-    WHERE {{
-        ?s a <{type_uri}> ;
-           <{prop_uri}> ?val .
-    }}
-    """
-
     def _run_count(query: str, binding_name: str):
-        response = requests.get(
-            TRIPLESTORE_SPARQL_URL,
-            params={"query": query, "format": "json"},
-            auth=TRIPLESTORE_AUTH,
-            timeout=30,
-        )
-        response.raise_for_status()
-        bindings = response.json().get("results", {}).get("bindings", [])
+        data = _run_sparql(query, _BUDGET_QUERY_S)
+        bindings = data.get("results", {}).get("bindings", [])
         if not bindings:
             return None
         return int(bindings[0].get(binding_name, {}).get("value", 0))
 
-    total = _run_count(total_query, "total")
-    if total is None:
-        return f"Could not retrieve counts for type '{type}' and property '{property}'."
+    try:
+        # Resolve the type to a URI
+        type_uri, type_err = _resolve_type_uri(type)
+        if type_err:
+            return type_err
 
-    with_prop = _run_count(with_prop_query, "withProp")
-    if with_prop is None:
-        return f"Could not retrieve counts for type '{type}' and property '{property}'."
+        # Resolve the property to a URI
+        prop_uri, prop_err = _resolve_property_uri(property)
+        if prop_err:
+            return prop_err
+
+        # Two separate queries to keep both shapes simple and cheap.
+        #
+        # A single combined query with an OPTIONAL block is tempting but a trap:
+        # if the OPTIONAL doesn't share a bound variable with the outer pattern,
+        # Fuseki materialises a Cartesian product (instances × instances-with-prop)
+        # and the 30 s service guard fires long before the query returns. See #477.
+        total_query = f"""
+        SELECT (COUNT(DISTINCT ?s) AS ?total)
+        WHERE {{
+            ?s a <{type_uri}> .
+        }}
+        """
+
+        with_prop_query = f"""
+        SELECT (COUNT(DISTINCT ?s) AS ?withProp)
+        WHERE {{
+            ?s a <{type_uri}> ;
+               <{prop_uri}> ?val .
+        }}
+        """
+
+        total = _run_count(total_query, "total")
+        if total is None:
+            return f"Could not retrieve counts for type '{type}' and property '{property}'."
+
+        with_prop = _run_count(with_prop_query, "withProp")
+        if with_prop is None:
+            return f"Could not retrieve counts for type '{type}' and property '{property}'."
+    except _TriplestoreTimeout as e:
+        return _sparql_timeout_error("count_by_property", e.budget_secs)
+    except _TriplestoreUnavailable as e:
+        return _sparql_503_error("count_by_property", e.likely_outage)
 
     return f"{with_prop:,} of {total:,} {type} entities have a {property} property."
 

@@ -9,6 +9,7 @@ import json
 from unittest.mock import MagicMock, patch
 
 import pytest
+import requests
 
 import server
 
@@ -905,3 +906,263 @@ def test_get_data_sources_is_markdown_table():
     result = server.get_data_sources()
     # Should contain table separator row (pipe characters and dashes)
     assert "|-----" in result
+
+
+# ---------------------------------------------------------------------------
+# Timeout and 503 error handling
+# ---------------------------------------------------------------------------
+#
+# Each MCP tool that contacts an external service must handle:
+#   1. Timeout — named as a tool issue, not infrastructure failure.
+#   2. 503 from the triplestore — with a health probe to distinguish a real
+#      Fuseki outage (likely_outage=True) from a query-level error (False).
+#
+# Helpers
+# -------
+
+def _timeout() -> requests.exceptions.Timeout:
+    """Return a Timeout instance for use as a side_effect."""
+    return requests.exceptions.Timeout()
+
+
+def _503_response() -> MagicMock:
+    """Return a mock requests.Response with status_code 503."""
+    mock = MagicMock()
+    mock.status_code = 503
+    return mock
+
+
+def _healthy_response() -> MagicMock:
+    """Return a mock health-probe response indicating Fuseki is up."""
+    mock = MagicMock()
+    mock.status_code = 200
+    return mock
+
+
+def _unhealthy_response() -> MagicMock:
+    """Return a mock health-probe response indicating Fuseki is down (5xx)."""
+    mock = MagicMock()
+    mock.status_code = 503
+    return mock
+
+
+# ---------------------------------------------------------------------------
+# search — Typesense timeout
+# ---------------------------------------------------------------------------
+
+def test_search_timeout_returns_friendly_message():
+    """search returns a friendly timeout message without exposing internal details."""
+    with patch("server.requests.get", side_effect=_timeout()):
+        result = server.search("Alice")
+
+    assert "timed out" in result.lower()
+    # Should not expose raw exception type or stack information
+    assert "Timeout" not in result
+    assert "Exception" not in result
+
+
+# ---------------------------------------------------------------------------
+# get_entity — triplestore timeout and 503
+# ---------------------------------------------------------------------------
+
+def test_get_entity_timeout():
+    """get_entity returns a structured timeout message naming the tool."""
+    with patch("server.requests.get", side_effect=_timeout()):
+        result = server.get_entity("https://arachne.l42.eu/person/1")
+
+    assert "get_entity" in result
+    assert "timed out" in result.lower()
+    # Budget value should appear so the caller knows the constraint
+    assert str(int(server._BUDGET_QUERY_S)) in result
+
+
+def test_get_entity_503_likely_outage():
+    """get_entity reports a probable outage when the health probe also fails."""
+    with patch("server.requests.get", side_effect=[_503_response(), _unhealthy_response()]):
+        result = server.get_entity("https://arachne.l42.eu/person/1")
+
+    assert "503" in result
+    assert "unavailable" in result.lower()
+
+
+def test_get_entity_503_query_issue():
+    """get_entity reports a query-level error when Fuseki is reachable after 503."""
+    with patch("server.requests.get", side_effect=[_503_response(), _healthy_response()]):
+        result = server.get_entity("https://arachne.l42.eu/person/1")
+
+    assert "503" in result
+    assert "query" in result.lower()
+
+
+# ---------------------------------------------------------------------------
+# list_types — triplestore timeout and 503
+# ---------------------------------------------------------------------------
+
+def test_list_types_timeout():
+    """list_types returns a structured timeout message naming the tool."""
+    with patch("server.requests.get", side_effect=_timeout()):
+        result = server.list_types()
+
+    assert "list_types" in result
+    assert "timed out" in result.lower()
+    assert str(int(server._BUDGET_QUERY_S)) in result
+
+
+def test_list_types_503_likely_outage():
+    """list_types reports a probable outage when the health probe also fails."""
+    with patch("server.requests.get", side_effect=[_503_response(), _unhealthy_response()]):
+        result = server.list_types()
+
+    assert "503" in result
+    assert "unavailable" in result.lower()
+
+
+def test_list_types_503_query_issue():
+    """list_types reports a query-level error when Fuseki is reachable after 503."""
+    with patch("server.requests.get", side_effect=[_503_response(), _healthy_response()]):
+        result = server.list_types()
+
+    assert "503" in result
+    assert "query" in result.lower()
+
+
+# ---------------------------------------------------------------------------
+# find_entities — triplestore timeout and 503
+# ---------------------------------------------------------------------------
+
+def test_find_entities_timeout_during_type_resolve():
+    """find_entities handles a timeout that occurs during type resolution."""
+    with patch("server.requests.get", side_effect=_timeout()):
+        result = server.find_entities(type="Person")
+
+    assert "find_entities" in result
+    assert "timed out" in result.lower()
+
+
+def test_find_entities_timeout_during_main_query():
+    """find_entities handles a timeout that occurs during the main entity query."""
+    type_response = _sparql_response([
+        {"type": _uri_binding("https://schema.org/Person")},
+    ])
+    with patch("server.requests.get", side_effect=[type_response, _timeout()]):
+        result = server.find_entities(type="Person")
+
+    assert "find_entities" in result
+    assert "timed out" in result.lower()
+
+
+def test_find_entities_503_likely_outage():
+    """find_entities reports a probable outage when the health probe also fails."""
+    # The type resolver hits the 503; health probe also fails.
+    with patch("server.requests.get", side_effect=[_503_response(), _unhealthy_response()]):
+        result = server.find_entities(type="Person")
+
+    assert "503" in result
+    assert "unavailable" in result.lower()
+
+
+def test_find_entities_503_query_issue():
+    """find_entities reports a query-level error when Fuseki is reachable after 503."""
+    type_response = _sparql_response([
+        {"type": _uri_binding("https://schema.org/Person")},
+    ])
+    # Main entity query hits 503; health probe returns 200.
+    with patch("server.requests.get", side_effect=[type_response, _503_response(), _healthy_response()]):
+        result = server.find_entities(type="Person")
+
+    assert "503" in result
+    assert "query" in result.lower()
+
+
+# ---------------------------------------------------------------------------
+# count_by_property — triplestore timeout and 503
+# ---------------------------------------------------------------------------
+
+def test_count_by_property_timeout_during_type_resolve():
+    """count_by_property handles a timeout during type resolution."""
+    with patch("server.requests.get", side_effect=_timeout()):
+        result = server.count_by_property(type="Track", property="lyrics")
+
+    assert "count_by_property" in result
+    assert "timed out" in result.lower()
+
+
+def test_count_by_property_timeout_during_count_query():
+    """count_by_property handles a timeout during the count queries."""
+    type_response = _sparql_response([
+        {"type": _uri_binding("https://schema.org/MusicRecording")},
+    ])
+    prop_response = _sparql_response([
+        {"prop": _uri_binding("https://schema.org/lyrics")},
+    ])
+    with patch("server.requests.get", side_effect=[type_response, prop_response, _timeout()]):
+        result = server.count_by_property(type="Track", property="lyrics")
+
+    assert "count_by_property" in result
+    assert "timed out" in result.lower()
+
+
+def test_count_by_property_503_likely_outage():
+    """count_by_property reports a probable outage when health probe also fails."""
+    with patch("server.requests.get", side_effect=[_503_response(), _unhealthy_response()]):
+        result = server.count_by_property(type="Track", property="lyrics")
+
+    assert "503" in result
+    assert "unavailable" in result.lower()
+
+
+def test_count_by_property_503_query_issue():
+    """count_by_property reports a query-level error when Fuseki is reachable after 503."""
+    type_response = _sparql_response([
+        {"type": _uri_binding("https://schema.org/MusicRecording")},
+    ])
+    prop_response = _sparql_response([
+        {"prop": _uri_binding("https://schema.org/lyrics")},
+    ])
+    total_response = _total_response(1000)
+    # Second count query hits 503; health probe returns 200.
+    with patch(
+        "server.requests.get",
+        side_effect=[type_response, prop_response, total_response, _503_response(), _healthy_response()],
+    ):
+        result = server.count_by_property(type="Track", property="lyrics")
+
+    assert "503" in result
+    assert "query" in result.lower()
+
+
+# ---------------------------------------------------------------------------
+# _check_fuseki_health
+# ---------------------------------------------------------------------------
+
+def test_check_fuseki_health_up():
+    """_check_fuseki_health returns True when Fuseki responds with 2xx."""
+    mock = MagicMock()
+    mock.status_code = 200
+    with patch("server.requests.get", return_value=mock):
+        assert server._check_fuseki_health() is True
+
+
+def test_check_fuseki_health_down_timeout():
+    """_check_fuseki_health returns False when the health probe times out."""
+    with patch("server.requests.get", side_effect=_timeout()):
+        assert server._check_fuseki_health() is False
+
+
+def test_check_fuseki_health_down_5xx():
+    """_check_fuseki_health returns False when Fuseki returns a 5xx response."""
+    mock = MagicMock()
+    mock.status_code = 503
+    with patch("server.requests.get", return_value=mock):
+        assert server._check_fuseki_health() is False
+
+
+# ---------------------------------------------------------------------------
+# Budget constant regression
+# ---------------------------------------------------------------------------
+
+def test_budgets_below_fuseki_service_guard():
+    """All per-tool budgets must be strictly below Fuseki's 30 s service-loop guard."""
+    assert server._BUDGET_RESOLVE_S < 30
+    assert server._BUDGET_QUERY_S < 30
+    assert server._BUDGET_HEALTH_S < 30
