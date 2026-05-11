@@ -1,0 +1,45 @@
+<html>
+	<head>
+		<title>LucOs Arachne</title>
+		<meta name="viewport" content="initial-scale=1.0, user-scalable=no, width=device-width" />
+		<link href="/explore/style.css" rel="stylesheet" />
+		<link href="/explore/categories.css" rel="stylesheet" />
+		<link rel="icon" href="/icon.png" />
+		<link rel="manifest" href="/manifest.json" />
+	</head>
+	<body>
+		<lucos-navbar bg-colour="#02666d">Predicate Objects</lucos-navbar>
+		<a href="/explore/item?uri=<%= encodeURIComponent(uri) %>">&lt;- <%= subjectLabel %></a>
+		<div class="module">
+			<h2><%= predicateLabel %> (<%= totalCount.toLocaleString() %>)</h2>
+			<% if (values.length > 0) { %>
+				<ul class="results">
+					<% for (let ii = 0; ii < values.length; ii++) {
+						const value = values[ii];
+					%>
+					<li><%
+						if (value.uri) {
+							%><a href="/explore/item?uri=<%= encodeURIComponent(value.uri) %>"><%= value.label %></a><%
+						} else {
+							%><%= value.label %><%
+						}
+					%></li>
+					<% } %>
+				</ul>
+				<span class="count">Showing items <%= ((page - 1) * pageSize + 1).toLocaleString() %>&ndash;<%= Math.min(page * pageSize, totalCount).toLocaleString() %> of <%= totalCount.toLocaleString() %>.</span>
+				<nav class="pagination">
+					<% if (page > 1) { %>
+						<a href="/explore/predicate-objects?uri=<%= encodeURIComponent(uri) %>&amp;predicate=<%= encodeURIComponent(predicate) %>&amp;page=<%= page - 1 %>">&lt;- Page <%= page - 1 %></a> |
+					<% } %>
+					<strong>Page <%= page %></strong>
+					<% if (page < totalPages) { %>
+						| <a href="/explore/predicate-objects?uri=<%= encodeURIComponent(uri) %>&amp;predicate=<%= encodeURIComponent(predicate) %>&amp;page=<%= page + 1 %>">Page <%= page + 1 %> -&gt;</a>
+					<% } %>
+				</nav>
+			<% } else { %>
+				<p>No items found.</p>
+			<% } %>
+		</div>
+		<script type="text/javascript" src="/explore/client.js"></script>
+	</body>
+</html>
