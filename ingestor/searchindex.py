@@ -8,8 +8,7 @@ import urllib.parse
 MO = Namespace("http://purl.org/ontology/mo/")
 LOC_NS = Namespace("http://www.loc.gov/mads/rdf/v1#")
 EOLAS_NS = Namespace(f"https://eolas.l42.eu/ontology/")
-MEDIA_MANAGER_ONTOLOGY = Namespace("https://media-metadata.l42.eu/ontology/")
-MMM = Namespace("https://media-metadata.l42.eu/ontology#")
+MMM = Namespace("https://media-api.l42.eu/ontology#")
 SDO = Namespace("https://schema.org/")
 
 # RDF/OWL types which shouldn't be indexed in search index
@@ -206,7 +205,7 @@ def graph_to_track_docs(graph: Graph):
 
 		# album (onAlbum) — look up album's skos:prefLabel
 		albums = []
-		for album_uri in graph.objects(subj, MEDIA_MANAGER_ONTOLOGY.onAlbum):
+		for album_uri in graph.objects(subj, MMM.onAlbum):
 			try:
 				album_label = get_label(graph, album_uri)
 				albums.append(album_label)
@@ -290,7 +289,7 @@ def graph_to_track_docs(graph: Graph):
 		# offence (custom trigger predicate) — search URL values
 		offences = []
 		for p, o in graph.predicate_objects(subj):
-			if str(p).endswith("/ontology#trigger"):
+			if str(p) == "https://media-api.l42.eu/ontology#trigger":
 				val = _extract_search_url_value(str(o))
 				if val:
 					offences.append(val)
@@ -306,7 +305,7 @@ def graph_to_track_docs(graph: Graph):
 		# soundtrack (custom soundtrack predicate) — search URL values
 		soundtracks = []
 		for p, o in graph.predicate_objects(subj):
-			if str(p).endswith("/ontology#soundtrack"):
+			if str(p) == "https://media-api.l42.eu/ontology#soundtrack":
 				val = _extract_search_url_value(str(o))
 				if val:
 					soundtracks.append(val)
