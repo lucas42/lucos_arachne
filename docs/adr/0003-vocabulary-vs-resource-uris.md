@@ -24,7 +24,7 @@ The bug is that this same variable was also used when constructing vocabulary UR
 
 This caused two known issues:
 
-- **`lucos_arachne#479`**: phase 2 of the `dcterms:language` → `mmm:trackLanguage` migration (PR `lucas42/lucos_arachne#476`) bound the arachne consumer's `MMM` namespace to `https://media-api.l42.eu/ontology#…`, matching the document hostname. Phase 1 of that migration in `lucas42/lucos_media_metadata_api#226` continued emitting at `media-metadata.l42.eu/ontology#…`, matching the existing producer convention. Consumer and producer disagreed on the URI; the Typesense `language` facet would have been wiped on the next `cleanup_searchindex` run. Stop-gapped via `lucas42/lucos_arachne#480` reverting the consumer to match the producer's (wrong-but-self-consistent) convention.
+- **`#479`**: phase 2 of the `dcterms:language` → `mmm:trackLanguage` migration (PR `#476`) bound the arachne consumer's `MMM` namespace to `https://media-api.l42.eu/ontology#…`, matching the document hostname. Phase 1 of that migration in `lucas42/lucos_media_metadata_api#226` continued emitting at `media-metadata.l42.eu/ontology#…`, matching the existing producer convention. Consumer and producer disagreed on the URI; the Typesense `language` facet would have been wiped on the next `cleanup_searchindex` run. Stop-gapped via `#480` reverting the consumer to match the producer's (wrong-but-self-consistent) convention.
 - **A separate latent bug** at `lucos_arachne/ingestor/searchindex.py:11`: `MEDIA_MANAGER_ONTOLOGY = Namespace("https://media-metadata.l42.eu/ontology/")` uses a trailing `/` rather than `#`. Used at line 209 to look up `mmm:onAlbum`, the resulting `URIRef` is `https://media-metadata.l42.eu/ontology/onAlbum` (slash form). The producer emits `https://media-metadata.l42.eu/ontology#onAlbum` (fragment form, `lucos_media_metadata_api/rdfgen/rdf.go:56`). rdflib doesn't bridge the two string forms, so `onAlbum` reads have been silently returning nothing on `main` since the constant was introduced.
 
 Both bugs share a root cause: the producer's vocabulary URIs were never anchored to a hostname that anyone could expect to resolve. Once that anchoring is wrong, consumer code can drift in any direction and nobody notices until a query returns zero results.
@@ -76,7 +76,7 @@ Deferred. No identified concrete consumer of old URIs exists today: the internal
 
 Between Phase 1 shipping and Phase 2 shipping — measured in hours at most — the consumer is reading the old URIs while the triplestore (after the first post-Phase-1 ingest) only has the new ones. The Typesense `language` facet will briefly empty during the affected ingest cycle. It recovers organically on the next ingest after Phase 2 ships.
 
-`lucos_arachne#479` is stop-gapped via PR #480 (consumer reverted to match the existing producer convention). That stop-gap will be reversed by Phase 2 once Phase 1 is live — same line, same file, just the new hostname.
+`#479` is stop-gapped via PR #480 (consumer reverted to match the existing producer convention). That stop-gap will be reversed by Phase 2 once Phase 1 is live — same line, same file, just the new hostname.
 
 ## Consequences
 
@@ -95,22 +95,22 @@ Between Phase 1 shipping and Phase 2 shipping — measured in hours at most — 
 
 ### Neutral
 
-- **Old URIs become unresolvable after Phase C deploy.** Anything in the wild still pointing at `https://media-metadata.l42.eu/ontology#…` will 404. No known consumers exist; if any surface, the deferred 301-redirect option above can be revisited cheaply.
+- **Old URIs become unresolvable once Phase 2 ships.** Anything in the wild still pointing at `https://media-metadata.l42.eu/ontology#…` will 404 (well, technically already does — the manager has no `/ontology` route). No known consumers exist; if any surface, the deferred 301-redirect option above can be revisited cheaply.
 
 ## Implementation
 
 The implementation work is tracked in three sibling issues filed alongside this ADR:
 
 - **Phase 1 producer:** `lucas42/lucos_media_metadata_api#227` (blocked by this ADR).
-- **Phase 2 consumer:** `lucos_arachne#483` (blocked by Phase 1 + one ingest cycle).
-- **Cross-estate audit:** `lucos_arachne#484` (read-only audit of other RDF emitters; blocked by this ADR).
+- **Phase 2 consumer:** `#483` (blocked by Phase 1 + one ingest cycle).
+- **Cross-estate audit:** `#484` (read-only audit of other RDF emitters; blocked by this ADR).
 
 The audit is read-only — it identifies which other emitters (`lucos_contacts`, `lucos_eolas`, `lucos_photos`, `lucos_weightings`, `lucos_mood`, `lucos_schedule_tracker`) have the same conflation pattern. lucas42 decides separately whether to commission migration tickets off the back of the findings.
 
 ## References
 
-- `lucos_arachne#452` — original design discussion that introduced `mmm:trackLanguage`. The ADR amends the implicit URI-hostname convention assumed there.
-- `lucos_arachne#479` — active bug that surfaced the conflation. Stop-gapped via PR `#480`.
-- `lucos_media_metadata_api#226` — Phase 1 of the `dcterms:language` → `mmm:trackLanguage` migration. Same producer, same conflation pattern.
+- `#452` — original design discussion that introduced `mmm:trackLanguage`. The ADR amends the implicit URI-hostname convention assumed there.
+- `#479` — active bug that surfaced the conflation. Stop-gapped via PR `#480`.
+- `lucas42/lucos_media_metadata_api#226` — Phase 1 of the `dcterms:language` → `mmm:trackLanguage` migration. Same producer, same conflation pattern.
 - ADR-0001 in this repo — MCP server. Relies on vocab URIs resolving for the agent-facing ontology resource.
 - ADR-0002 in this repo — ingestion strategy. DROP+INSERT atomicity is what makes 2-phase migration safe here.
