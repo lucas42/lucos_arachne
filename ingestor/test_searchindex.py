@@ -25,8 +25,7 @@ from searchindex import (
 MO = Namespace("http://purl.org/ontology/mo/")
 BASE = Namespace("http://example.com/")
 MEDIA = Namespace("https://media-metadata.l42.eu/")
-MEDIA_MANAGER_ONTOLOGY = Namespace("https://media-metadata.l42.eu/ontology/")
-MMM = Namespace("https://media-metadata.l42.eu/ontology#")
+MMM = Namespace("https://media-api.l42.eu/ontology#")
 EOLAS = Namespace("https://eolas.l42.eu/metadata/")
 
 
@@ -130,7 +129,7 @@ def test_graph_to_track_docs_with_optional_fields():
         "Full Track",
         **{
             FOAF.maker: URIRef("https://media-metadata.l42.eu/search?p.artist=Radiohead"),
-            MEDIA_MANAGER_ONTOLOGY.onAlbum: URIRef("https://media-metadata.l42.eu/albums/1"),
+            MMM.onAlbum: URIRef("https://media-metadata.l42.eu/albums/1"),
             MO.duration: Literal("PT253S"),
             MMM.trackLanguage: URIRef("https://eolas.l42.eu/metadata/language/en/"),
             MO.lyrics: Literal("I'm a creep"),
@@ -158,7 +157,7 @@ def test_graph_to_track_docs_skips_missing_album_label():
         "http://example.com/track/4",
         "Track with Missing Album",
         **{
-            MEDIA_MANAGER_ONTOLOGY.onAlbum: URIRef("https://media-metadata.l42.eu/albums/missing"),
+            MMM.onAlbum: URIRef("https://media-metadata.l42.eu/albums/missing"),
         }
     )
     docs = graph_to_track_docs(g)
@@ -172,7 +171,7 @@ def test_graph_to_track_docs_populates_album_from_onAlbum_predicate():
         "http://example.com/track/5",
         "Album Test Track",
         **{
-            MEDIA_MANAGER_ONTOLOGY.onAlbum: URIRef("https://media-metadata.l42.eu/albums/1"),
+            MMM.onAlbum: URIRef("https://media-metadata.l42.eu/albums/1"),
         }
     )
     # Add album entity with its label
@@ -190,12 +189,12 @@ def test_graph_to_track_docs_multiple_albums():
         "http://example.com/track/6",
         "Multi-Album Track",
         **{
-            MEDIA_MANAGER_ONTOLOGY.onAlbum: URIRef("https://media-metadata.l42.eu/albums/1"),
+            MMM.onAlbum: URIRef("https://media-metadata.l42.eu/albums/1"),
         }
     )
     # Add second album reference (though this is unusual, test for robustness)
     track_uri = URIRef("http://example.com/track/6")
-    g.add((track_uri, MEDIA_MANAGER_ONTOLOGY.onAlbum, URIRef("https://media-metadata.l42.eu/albums/2")))
+    g.add((track_uri, MMM.onAlbum, URIRef("https://media-metadata.l42.eu/albums/2")))
 
     # Add album entities
     g.add((URIRef("https://media-metadata.l42.eu/albums/1"), SKOS.prefLabel, Literal("Album One")))
