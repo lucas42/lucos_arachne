@@ -26,11 +26,11 @@ WHERE {
 **✅ Correct — split into two queries, each bound to `?s`:**
 
 ```sparql
--- Query 1: total
+# Query 1: total
 SELECT (COUNT(DISTINCT ?s) AS ?total)
 WHERE { ?s a <https://schema.org/Track> . }
 
--- Query 2: with property
+# Query 2: with property
 SELECT (COUNT(DISTINCT ?s) AS ?withProp)
 WHERE {
     ?s a <https://schema.org/Track> .
