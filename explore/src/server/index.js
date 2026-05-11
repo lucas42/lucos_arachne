@@ -2,7 +2,7 @@ import express from 'express';
 import net from 'net';
 import rateLimit from 'express-rate-limit';
 import { middleware as authMiddleware } from './auth.js';
-import { processBindings, processPhaseACounts, processPhaseCBindings } from './processBindings.js';
+import { processBindings, processPhaseACounts, processPhaseCBindings, bestLabelAcrossRows } from './processBindings.js';
 import { computeDisplayLabels } from './disambiguate.js';
 import { formatYearRange } from './formatYearRange.js';
 import { sortContainedIn } from './sortContainedIn.js';
@@ -457,6 +457,71 @@ app.get('/item', catchErrors(async (req, res) => {
 		predicates,
 		wikipediaLink,
 		category,
+	});
+}));
+
+app.get('/predicate-objects', catchErrors(async (req, res) => {
+	const uri = req.query.uri;
+	const predicate = req.query.predicate;
+	if (!uri || !predicate) {
+		res.redirect(302, '/explore');
+		return;
+	}
+
+	const PAGE_SIZE = 50;
+	const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+	const offset = (page - 1) * PAGE_SIZE;
+
+	// Run meta query (subject label, predicate label, total object count) and
+	// paged objects query in parallel.
+	const [metaBindings, pageBindings] = await Promise.all([
+		sparqlFetch(`
+			PREFIX skos: <http://www.w3.org/2004/02/skos/core#>
+			PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+			SELECT ?subjectLabel ?subjectLabelRdfs ?predicateLabel ?predicateLabelRdfs (COUNT(?o) AS ?count) WHERE {
+				BIND(<${uri}> AS ?subject)
+				BIND(<${predicate}> AS ?pred)
+				OPTIONAL { ?subject skos:prefLabel ?subjectLabel }
+				OPTIONAL { ?subject rdfs:label ?subjectLabelRdfs }
+				OPTIONAL { ?pred skos:prefLabel ?predicateLabel }
+				OPTIONAL { ?pred rdfs:label ?predicateLabelRdfs }
+				?subject ?pred ?o .
+			}
+			GROUP BY ?subjectLabel ?subjectLabelRdfs ?predicateLabel ?predicateLabelRdfs
+		`),
+		sparqlFetch(`
+			PREFIX skos: <http://www.w3.org/2004/02/skos/core#>
+			PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+			SELECT ?object ?objectLabel ?objectLabelRdfs WHERE {
+				BIND(<${uri}> AS ?subject)
+				?subject <${predicate}> ?object .
+				OPTIONAL { ?object skos:prefLabel ?objectLabel }
+				OPTIONAL { ?object rdfs:label ?objectLabelRdfs }
+			}
+			ORDER BY ASC(COALESCE(?objectLabel, ?objectLabelRdfs, ?object)) ASC(?object)
+			LIMIT ${PAGE_SIZE} OFFSET ${offset}
+		`),
+	]);
+
+	const subjectLabel = bestLabelAcrossRows(metaBindings, 'subjectLabel', 'subjectLabelRdfs') || uri;
+	const predicateLabel = bestLabelAcrossRows(metaBindings, 'predicateLabel', 'predicateLabelRdfs') || predicate;
+	const totalCount = metaBindings.length > 0
+		? Math.max(...metaBindings.map(r => parseInt(r.count.value, 10)))
+		: 0;
+
+	const values = processPhaseCBindings(pageBindings);
+	const totalPages = Math.ceil(totalCount / PAGE_SIZE);
+
+	res.render('predicate-objects', {
+		uri,
+		subjectLabel,
+		predicate,
+		predicateLabel,
+		totalCount,
+		values,
+		page,
+		totalPages,
+		pageSize: PAGE_SIZE,
 	});
 }));
 
