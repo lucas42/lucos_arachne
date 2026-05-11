@@ -328,3 +328,48 @@ def test_ontology_uses_replace_graph_not_diff():
     ingest.ontology_cache = _ontology_cache_stub
     ingest.live_systems = _live_systems_stub
     ingest.ONTOLOGIES_DIR = old_ONTOLOGIES_DIR
+
+
+# ---------------------------------------------------------------------------
+# Loganne message — differentiated by any_changed / has_failures
+# ---------------------------------------------------------------------------
+
+def test_loganne_message_no_changes():
+    """When nothing changed, loganne reports a no-op check."""
+    _reset_mocks()
+    _get_source_hash_mock.return_value = _expected_hash(_CONTENT, _CONTENT_TYPE)
+    ingest.run_ingest()
+    _update_loganne_mock.assert_called_once()
+    human_readable = _update_loganne_mock.call_args.kwargs["humanReadable"]
+    assert human_readable == "Knowledge graph checked — no changes"
+
+
+def test_loganne_message_updated():
+    """When sources changed without failures, loganne reports an update."""
+    _reset_mocks()
+    _get_source_hash_mock.return_value = None
+    ingest.run_ingest()
+    _update_loganne_mock.assert_called_once()
+    human_readable = _update_loganne_mock.call_args.kwargs["humanReadable"]
+    assert human_readable == "Knowledge graph updated"
+
+
+def test_loganne_message_failed_no_changes():
+    """When fetch fails and nothing changed, loganne reports a total failure."""
+    _reset_mocks()
+    _fetch_url_mock.side_effect = Exception("network error")
+    ingest.run_ingest()
+    _update_loganne_mock.assert_called_once()
+    human_readable = _update_loganne_mock.call_args.kwargs["humanReadable"]
+    assert human_readable == "Knowledge graph ingest failed — no updates applied"
+
+
+def test_loganne_message_partial_failure():
+    """When some sources changed but post-ingest fails, loganne reports a partial update."""
+    _reset_mocks()
+    _get_source_hash_mock.return_value = None
+    _update_searchindex_mock.side_effect = Exception("search index down")
+    ingest.run_ingest()
+    _update_loganne_mock.assert_called_once()
+    human_readable = _update_loganne_mock.call_args.kwargs["humanReadable"]
+    assert human_readable == "Knowledge graph partially updated — some sources failed"

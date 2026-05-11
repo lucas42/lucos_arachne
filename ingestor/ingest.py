@@ -143,7 +143,15 @@ def run_ingest():
 		cleanup_triplestore(all_graph_uris)
 		cleanup_searchindex(all_item_ids, all_track_ids)
 
-	updateLoganne(type="knowledgeIngest", humanReadable="Data ingested into knowledge graph", url=BASE_URL)
+	if has_failures and not any_changed:
+		human_readable = "Knowledge graph ingest failed — no updates applied"
+	elif has_failures:
+		human_readable = "Knowledge graph partially updated — some sources failed"
+	elif any_changed:
+		human_readable = "Knowledge graph updated"
+	else:
+		human_readable = "Knowledge graph checked — no changes"
+	updateLoganne(type="knowledgeIngest", humanReadable=human_readable, url=BASE_URL)
 	updateScheduleTracker(success=True, system="lucos_arachne_ingestor")
 
 
