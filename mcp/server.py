@@ -609,35 +609,47 @@ def count_by_property(type: str, property: str) -> str:
     if prop_err:
         return prop_err
 
-    query = f"""
-    SELECT
-        (COUNT(DISTINCT ?s) AS ?total)
-        (COUNT(DISTINCT ?sWithProp) AS ?withProp)
+    # Two separate queries to keep both shapes simple and cheap.
+    #
+    # A single combined query with an OPTIONAL block is tempting but a trap:
+    # if the OPTIONAL doesn't share a bound variable with the outer pattern,
+    # Fuseki materialises a Cartesian product (instances × instances-with-prop)
+    # and the 30 s service guard fires long before the query returns. See #477.
+    total_query = f"""
+    SELECT (COUNT(DISTINCT ?s) AS ?total)
     WHERE {{
         ?s a <{type_uri}> .
-        OPTIONAL {{
-            ?sWithProp a <{type_uri}> .
-            ?sWithProp <{prop_uri}> ?val .
-        }}
     }}
     """
 
-    response = requests.get(
-        TRIPLESTORE_SPARQL_URL,
-        params={"query": query, "format": "json"},
-        auth=TRIPLESTORE_AUTH,
-        timeout=30,
-    )
-    response.raise_for_status()
-    data = response.json()
+    with_prop_query = f"""
+    SELECT (COUNT(DISTINCT ?s) AS ?withProp)
+    WHERE {{
+        ?s a <{type_uri}> ;
+           <{prop_uri}> ?val .
+    }}
+    """
 
-    bindings = data.get("results", {}).get("bindings", [])
-    if not bindings:
+    def _run_count(query: str, binding_name: str):
+        response = requests.get(
+            TRIPLESTORE_SPARQL_URL,
+            params={"query": query, "format": "json"},
+            auth=TRIPLESTORE_AUTH,
+            timeout=30,
+        )
+        response.raise_for_status()
+        bindings = response.json().get("results", {}).get("bindings", [])
+        if not bindings:
+            return None
+        return int(bindings[0].get(binding_name, {}).get("value", 0))
+
+    total = _run_count(total_query, "total")
+    if total is None:
         return f"Could not retrieve counts for type '{type}' and property '{property}'."
 
-    binding = bindings[0]
-    total = int(binding.get("total", {}).get("value", 0))
-    with_prop = int(binding.get("withProp", {}).get("value", 0))
+    with_prop = _run_count(with_prop_query, "withProp")
+    if with_prop is None:
+        return f"Could not retrieve counts for type '{type}' and property '{property}'."
 
     return f"{with_prop:,} of {total:,} {type} entities have a {property} property."
 

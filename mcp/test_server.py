@@ -652,13 +652,17 @@ def test_get_entity_bnode_without_sub_properties():
 # count_by_property
 # ---------------------------------------------------------------------------
 
-def _count_response(total: int, with_prop: int) -> MagicMock:
-    """Build a mock SPARQL response for count_by_property queries."""
+def _total_response(total: int) -> MagicMock:
+    """Build a mock SPARQL response for the `?total` count query."""
     return _sparql_response([
-        {
-            "total": _literal(str(total), datatype="http://www.w3.org/2001/XMLSchema#integer"),
-            "withProp": _literal(str(with_prop), datatype="http://www.w3.org/2001/XMLSchema#integer"),
-        }
+        {"total": _literal(str(total), datatype="http://www.w3.org/2001/XMLSchema#integer")},
+    ])
+
+
+def _with_prop_response(with_prop: int) -> MagicMock:
+    """Build a mock SPARQL response for the `?withProp` count query."""
+    return _sparql_response([
+        {"withProp": _literal(str(with_prop), datatype="http://www.w3.org/2001/XMLSchema#integer")},
     ])
 
 
@@ -670,9 +674,13 @@ def test_count_by_property_basic():
     prop_response = _sparql_response([
         {"prop": _uri_binding("https://schema.org/lyrics")},
     ])
-    count_response = _count_response(total=3891, with_prop=1247)
+    total_response = _total_response(3891)
+    with_prop_response = _with_prop_response(1247)
 
-    with patch("server.requests.get", side_effect=[type_response, prop_response, count_response]):
+    with patch(
+        "server.requests.get",
+        side_effect=[type_response, prop_response, total_response, with_prop_response],
+    ):
         result = server.count_by_property(type="Track", property="lyrics")
 
     assert "1,247" in result
@@ -686,16 +694,20 @@ def test_count_by_property_with_type_uri_directly():
     prop_response = _sparql_response([
         {"prop": _uri_binding("https://schema.org/lyrics")},
     ])
-    count_response = _count_response(total=100, with_prop=50)
+    total_response = _total_response(100)
+    with_prop_response = _with_prop_response(50)
 
-    # Only two SPARQL calls: property resolution + count query (no type resolution)
-    with patch("server.requests.get", side_effect=[prop_response, count_response]) as mock_get:
+    # Three SPARQL calls: property resolution + two count queries (no type resolution)
+    with patch(
+        "server.requests.get",
+        side_effect=[prop_response, total_response, with_prop_response],
+    ) as mock_get:
         result = server.count_by_property(
             type="https://schema.org/MusicRecording",
             property="lyrics",
         )
 
-    assert mock_get.call_count == 2
+    assert mock_get.call_count == 3
     assert "50" in result
     assert "100" in result
 
@@ -705,16 +717,20 @@ def test_count_by_property_with_property_uri_directly():
     type_response = _sparql_response([
         {"type": _uri_binding("https://schema.org/MusicRecording")},
     ])
-    count_response = _count_response(total=500, with_prop=200)
+    total_response = _total_response(500)
+    with_prop_response = _with_prop_response(200)
 
-    # Only two SPARQL calls: type resolution + count query (no property resolution)
-    with patch("server.requests.get", side_effect=[type_response, count_response]) as mock_get:
+    # Three SPARQL calls: type resolution + two count queries (no property resolution)
+    with patch(
+        "server.requests.get",
+        side_effect=[type_response, total_response, with_prop_response],
+    ) as mock_get:
         result = server.count_by_property(
             type="Track",
             property="https://schema.org/lyrics",
         )
 
-    assert mock_get.call_count == 2
+    assert mock_get.call_count == 3
     assert "200" in result
     assert "500" in result
 
@@ -727,13 +743,84 @@ def test_count_by_property_none_have_property():
     prop_response = _sparql_response([
         {"prop": _uri_binding("https://schema.org/lyrics")},
     ])
-    count_response = _count_response(total=3891, with_prop=0)
+    total_response = _total_response(3891)
+    with_prop_response = _with_prop_response(0)
 
-    with patch("server.requests.get", side_effect=[type_response, prop_response, count_response]):
+    with patch(
+        "server.requests.get",
+        side_effect=[type_response, prop_response, total_response, with_prop_response],
+    ):
         result = server.count_by_property(type="Track", property="lyrics")
 
     assert "0" in result
     assert "3,891" in result
+
+
+def test_count_by_property_query_shape_no_cartesian_product():
+    """
+    Regression test for #477.
+
+    The original query used a single SELECT with an OPTIONAL block whose
+    inner subject (`?sWithProp`) shared no join variable with the outer
+    subject (`?s`). Fuseki materialised the Cartesian product of "all
+    instances" × "all instances with property", which at production data
+    sizes always tripped the 30 s service guard.
+
+    The fix is to issue two separate count queries, each constrained to a
+    single subject variable. This test introspects the SPARQL strings
+    actually sent so a future refactor that re-introduces the Cartesian
+    shape will fail here rather than silently regressing in production.
+    """
+    type_response = _sparql_response([
+        {"type": _uri_binding("https://schema.org/MusicRecording")},
+    ])
+    prop_response = _sparql_response([
+        {"prop": _uri_binding("https://schema.org/lyrics")},
+    ])
+    total_response = _total_response(3891)
+    with_prop_response = _with_prop_response(1247)
+
+    with patch(
+        "server.requests.get",
+        side_effect=[type_response, prop_response, total_response, with_prop_response],
+    ) as mock_get:
+        server.count_by_property(type="Track", property="lyrics")
+
+    # Type and property resolution + two count queries.
+    assert mock_get.call_count == 4
+
+    # The two count queries are calls 3 and 4 (0-indexed: 2 and 3).
+    count_queries = [
+        mock_get.call_args_list[2].kwargs["params"]["query"],
+        mock_get.call_args_list[3].kwargs["params"]["query"],
+    ]
+
+    for q in count_queries:
+        # No OPTIONAL — that block was the route to the Cartesian product.
+        assert "OPTIONAL" not in q, (
+            f"count query reintroduced an OPTIONAL block, which risks the "
+            f"Cartesian-product shape of #477:\n{q}"
+        )
+        # Only one subject variable bound — `?s`. The original bug used a
+        # separate `?sWithProp` with no join to `?s`.
+        assert "?sWithProp" not in q, (
+            f"count query reintroduced a second subject variable; this is "
+            f"how the original Cartesian product was constructed:\n{q}"
+        )
+        # Counts subjects, not values — protects against the under-reporting
+        # variant flagged by lucos-architect on #477.
+        assert "COUNT(DISTINCT ?s)" in q, (
+            f"count query no longer counts distinct subjects — counting "
+            f"distinct values under-reports for properties whose values "
+            f"are shared between subjects:\n{q}"
+        )
+
+    # Both queries are constrained to instances of the requested type.
+    for q in count_queries:
+        assert "<https://schema.org/MusicRecording>" in q
+    # Only the second (withProp) query restricts on the property.
+    assert "<https://schema.org/lyrics>" not in count_queries[0]
+    assert "<https://schema.org/lyrics>" in count_queries[1]
 
 
 def test_count_by_property_type_not_found():
