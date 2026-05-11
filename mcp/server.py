@@ -267,8 +267,13 @@ def get_entity(uri: str) -> str:
     """
     Return all properties and values for a given entity URI.
 
-    Queries the triplestore reasoning endpoint (which includes inferred triples)
-    for all triples where the given URI is the subject. Properties are shown with
+    Uses the OWL-inferred `arachne` endpoint, so the result includes both directly
+    asserted triples and inferred ones. For example, if a group has a `foaf:member`
+    assertion pointing to a person, Fuseki's OWL reasoner infers the inverse
+    `foaf:memberOf` on the person. On the raw `raw_arachne` endpoint that inverse
+    triple would be absent even though the relationship exists in the data.
+
+    Queries for all triples where the given URI is the subject. Properties are shown with
     human-readable prefixed names where possible (e.g. foaf:name, skos:prefLabel).
     Blank node property values are resolved one level deep and displayed inline.
 
@@ -363,6 +368,12 @@ def get_entity(uri: str) -> str:
 def list_types() -> str:
     """
     List all RDF types in the triplestore with instance counts.
+
+    Uses the OWL-inferred `arachne` endpoint so that instance counts reflect
+    class-hierarchy closure. An entity declared as a subtype (e.g. `schema:MusicAlbum`)
+    is also counted under its supertypes (e.g. `schema:CreativeWork`) if the ontology
+    defines the subclass relationship. On the raw `raw_arachne` endpoint, subclass
+    membership is not expanded and supertype counts would under-report.
 
     Returns a list of types sorted by instance count (descending), with
     human-readable labels where available (skos:prefLabel or rdfs:label),
@@ -535,6 +546,12 @@ def find_entities(
     Find entities of a given type in the knowledge graph, with optional property values
     and filters.
 
+    Uses the OWL-inferred `arachne` endpoint so that type membership includes subclass
+    instances: querying for `schema:CreativeWork` returns `schema:MusicAlbum` entities
+    too, because the OWL reasoner expands the subclass hierarchy. On the raw
+    `raw_arachne` endpoint, only entities with a direct `rdf:type` assertion for the
+    requested type would match — subclass instances would be silently excluded.
+
     Returns a list of matching entities with their URI, label, and any requested
     property values.
 
@@ -670,6 +687,13 @@ def find_entities(
 def count_by_property(type: str, property: str) -> str:
     """
     Count how many entities of a given type have a specific property.
+
+    Uses the OWL-inferred `arachne` endpoint. The type check (`?s a <type>`)
+    benefits from OWL closure: subclass instances are included in the total,
+    so querying for `schema:CreativeWork` counts `schema:MusicAlbum` instances
+    too. The property check (`?s <prop> ?val`) gains little from inference since
+    most data properties in this graph are directly asserted — but keeping both
+    queries on the same endpoint avoids unnecessary complexity.
 
     Returns the total number of entities of the type, and how many of those
     have the specified property set.
