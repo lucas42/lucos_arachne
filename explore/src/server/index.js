@@ -6,6 +6,7 @@ import { processBindings, processPhaseACounts, processPhaseCBindings, bestLabelA
 import { computeDisplayLabels } from './disambiguate.js';
 import { formatYearRange } from './formatYearRange.js';
 import { sortContainedIn } from './sortContainedIn.js';
+import { validateIri } from './validateIri.js';
 
 const app = express();
 app.auth = authMiddleware;
@@ -317,6 +318,7 @@ app.get('/item', catchErrors(async (req, res) => {
 		res.redirect(302, '/explore');
 		return;
 	}
+	validateIri(uri, 'uri');
 
 	// Phase A: per-predicate object counts and labels (one cheap GROUP BY query).
 	const phaseABindings = await sparqlFetch(`
@@ -467,6 +469,8 @@ app.get('/predicate-objects', catchErrors(async (req, res) => {
 		res.redirect(302, '/explore');
 		return;
 	}
+	validateIri(uri, 'uri');
+	validateIri(predicate, 'predicate');
 
 	const PAGE_SIZE = 50;
 	const page = Math.max(1, parseInt(req.query.page, 10) || 1);
@@ -527,7 +531,7 @@ app.get('/predicate-objects', catchErrors(async (req, res) => {
 
 // Error Handler
 app.use((error, req, res, next) => {
-	res.status(500);
+	res.status(error.status || 500);
 	console.error(error.stack);
 	res.json({errorMessage: error.message});
 });
