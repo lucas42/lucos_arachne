@@ -1,4 +1,4 @@
-FROM lucas42/lucos_scheduled_scripts:2.0.10
+FROM lucas42/lucos_scheduled_scripts:2.0.11
 ARG VERSION
 ENV VERSION=$VERSION
 
