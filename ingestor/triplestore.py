@@ -1,3 +1,4 @@
+import hashlib
 import os, sys
 import requests
 from rdflib import BNode, Graph
@@ -242,9 +243,32 @@ def compute_inferences():
 		print("No owl:inverseOf pairs found")
 
 	# ── Write inferred graph ─────────────────────────────────────────────────
+	inferred_lines.sort()  # Deterministic ordering for stable hashing
 	turtle_content = "\n".join(inferred_lines)
-	print(f"Writing {len(inferred_lines)} total inferred triple{'s' if len(inferred_lines) != 1 else ''} to <{INFERRED_GRAPH}>")
-	replace_graph_in_triplestore(INFERRED_GRAPH, turtle_content, "text/turtle")
+	content_hash = "sha256:" + hashlib.sha256(turtle_content.encode("utf-8")).hexdigest()
+
+	# Approach 2: skip the triplestore round-trip entirely if the content hash
+	# is unchanged from the last run.  When the same sources produce the same
+	# inferred set (by far the common case after the first ingest), this avoids
+	# a CONSTRUCT query AND all write traffic.
+	stored_hash = get_source_hash(INFERRED_GRAPH)
+	if stored_hash == content_hash:
+		print(f"Inferred graph content hash unchanged ({content_hash}) — skipping writes")
+		return False
+
+	# Approach 1: diff-based update.  diff_graph_in_triplestore fetches the
+	# current graph and returns only the minimal INSERT/DELETE fragment, or
+	# None if the triples are already identical (e.g. the hash changed due to
+	# serialisation order but the actual triple set is the same).
+	print(f"Computing diff for {len(inferred_lines)} inferred triple{'s' if len(inferred_lines) != 1 else ''} against <{INFERRED_GRAPH}>")
+	fragment = diff_graph_in_triplestore(INFERRED_GRAPH, turtle_content, "text/turtle")
+	if fragment:
+		execute_sparql_update(fragment)
+		print(f"Inferred graph updated via diff")
+	else:
+		print(f"Inferred graph diff is empty — no triplestore writes needed")
+	set_source_hash(INFERRED_GRAPH, content_hash)
+	return fragment is not None
 
 
 def _content_type_to_rdflib_format(content_type: str) -> str:

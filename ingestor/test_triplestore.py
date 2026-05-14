@@ -1,4 +1,5 @@
 """Tests for triplestore.py helper functions."""
+import hashlib
 import os
 os.environ.setdefault("KEY_LUCOS_ARACHNE", "test-key")
 
@@ -402,3 +403,144 @@ def test_execute_sparql_update_raises_on_error():
             assert False, "Expected exception"
         except Exception as e:
             assert "500" in str(e)
+
+
+# ---------------------------------------------------------------------------
+# compute_inferences — hash-skip (Approach 2) and diff-based update (Approach 1)
+# ---------------------------------------------------------------------------
+
+def _no_bindings_response():
+    """Mock SPARQL SELECT response with no results (no transitive/inverse props)."""
+    resp = MagicMock()
+    resp.ok = True
+    resp.raise_for_status = MagicMock()
+    resp.json.return_value = {"results": {"bindings": []}}
+    return resp
+
+
+def _empty_inferred_hash():
+    """SHA-256 hash of the empty turtle content produced when there are no inferred triples."""
+    return "sha256:" + hashlib.sha256("".encode("utf-8")).hexdigest()
+
+
+def test_compute_inferences_skips_all_writes_when_hash_matches():
+    """
+    When the stored hash matches the computed content hash, compute_inferences
+    returns False and makes no calls to diff, execute, or set_source_hash.
+
+    This is Approach 2: the triplestore round-trip is skipped entirely when the
+    inferred set hasn't changed since the last run.
+    """
+    with (
+        patch.object(triplestore.session, "post", return_value=_no_bindings_response()),
+        patch.object(triplestore, "get_source_hash", return_value=_empty_inferred_hash()),
+        patch.object(triplestore, "diff_graph_in_triplestore") as mock_diff,
+        patch.object(triplestore, "execute_sparql_update") as mock_exec,
+        patch.object(triplestore, "set_source_hash") as mock_set,
+    ):
+        result = triplestore.compute_inferences()
+
+    assert result is False
+    mock_diff.assert_not_called()
+    mock_exec.assert_not_called()
+    mock_set.assert_not_called()
+
+
+def test_compute_inferences_calls_diff_on_hash_mismatch():
+    """
+    When the stored hash does not match the computed hash, compute_inferences
+    calls diff_graph_in_triplestore with the inferred graph URI and turtle content.
+
+    This is Approach 1: the diff narrows writes to the minimal change set.
+    """
+    with (
+        patch.object(triplestore.session, "post", return_value=_no_bindings_response()),
+        patch.object(triplestore, "get_source_hash", return_value="sha256:stale"),
+        patch.object(triplestore, "diff_graph_in_triplestore", return_value=None) as mock_diff,
+        patch.object(triplestore, "execute_sparql_update"),
+        patch.object(triplestore, "set_source_hash"),
+    ):
+        triplestore.compute_inferences()
+
+    mock_diff.assert_called_once_with(triplestore.INFERRED_GRAPH, "", "text/turtle")
+
+
+def test_compute_inferences_executes_fragment_when_diff_has_changes():
+    """
+    When diff_graph_in_triplestore returns a non-None fragment, compute_inferences
+    calls execute_sparql_update with that fragment.
+    """
+    fragment = "INSERT DATA { GRAPH <urn:lucos:inferred> { <ex:s> <ex:p> <ex:o> . } }"
+    with (
+        patch.object(triplestore.session, "post", return_value=_no_bindings_response()),
+        patch.object(triplestore, "get_source_hash", return_value="sha256:stale"),
+        patch.object(triplestore, "diff_graph_in_triplestore", return_value=fragment),
+        patch.object(triplestore, "execute_sparql_update") as mock_exec,
+        patch.object(triplestore, "set_source_hash"),
+    ):
+        triplestore.compute_inferences()
+
+    mock_exec.assert_called_once_with(fragment)
+
+
+def test_compute_inferences_skips_execute_when_diff_is_none():
+    """
+    When diff_graph_in_triplestore returns None (triples already in sync),
+    compute_inferences does NOT call execute_sparql_update.
+    """
+    with (
+        patch.object(triplestore.session, "post", return_value=_no_bindings_response()),
+        patch.object(triplestore, "get_source_hash", return_value="sha256:stale"),
+        patch.object(triplestore, "diff_graph_in_triplestore", return_value=None),
+        patch.object(triplestore, "execute_sparql_update") as mock_exec,
+        patch.object(triplestore, "set_source_hash"),
+    ):
+        triplestore.compute_inferences()
+
+    mock_exec.assert_not_called()
+
+
+def test_compute_inferences_updates_hash_after_diff():
+    """
+    After calling diff_graph_in_triplestore (whether fragment is None or not),
+    compute_inferences stores the new content hash via set_source_hash.
+    """
+    with (
+        patch.object(triplestore.session, "post", return_value=_no_bindings_response()),
+        patch.object(triplestore, "get_source_hash", return_value="sha256:stale"),
+        patch.object(triplestore, "diff_graph_in_triplestore", return_value=None),
+        patch.object(triplestore, "execute_sparql_update"),
+        patch.object(triplestore, "set_source_hash") as mock_set,
+    ):
+        triplestore.compute_inferences()
+
+    mock_set.assert_called_once_with(triplestore.INFERRED_GRAPH, _empty_inferred_hash())
+
+
+def test_compute_inferences_returns_true_when_diff_has_changes():
+    """compute_inferences returns True when the diff produced triplestore writes."""
+    fragment = "INSERT DATA { GRAPH <urn:lucos:inferred> { <ex:s> <ex:p> <ex:o> . } }"
+    with (
+        patch.object(triplestore.session, "post", return_value=_no_bindings_response()),
+        patch.object(triplestore, "get_source_hash", return_value="sha256:stale"),
+        patch.object(triplestore, "diff_graph_in_triplestore", return_value=fragment),
+        patch.object(triplestore, "execute_sparql_update"),
+        patch.object(triplestore, "set_source_hash"),
+    ):
+        result = triplestore.compute_inferences()
+
+    assert result is True
+
+
+def test_compute_inferences_returns_false_when_diff_is_none():
+    """compute_inferences returns False when the diff found no changes to apply."""
+    with (
+        patch.object(triplestore.session, "post", return_value=_no_bindings_response()),
+        patch.object(triplestore, "get_source_hash", return_value="sha256:stale"),
+        patch.object(triplestore, "diff_graph_in_triplestore", return_value=None),
+        patch.object(triplestore, "execute_sparql_update"),
+        patch.object(triplestore, "set_source_hash"),
+    ):
+        result = triplestore.compute_inferences()
+
+    assert result is False
