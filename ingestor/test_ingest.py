@@ -373,3 +373,57 @@ def test_loganne_message_partial_failure():
     _update_loganne_mock.assert_called_once()
     human_readable = _update_loganne_mock.call_args.kwargs["humanReadable"]
     assert human_readable == "Knowledge graph partially updated — some sources failed"
+
+
+# ---------------------------------------------------------------------------
+# Schedule tracker v2 call shape
+# ---------------------------------------------------------------------------
+
+def test_schedule_tracker_uses_lucos_arachne_system_on_hash_skip():
+    """When a source is hash-skipped, updateScheduleTracker uses system='lucos_arachne'
+    and job_name equal to the source name."""
+    _reset_mocks()
+    _get_source_hash_mock.return_value = _expected_hash(_CONTENT, _CONTENT_TYPE)
+    ingest.run_ingest()
+    # find the call for the skipped live source
+    calls = _update_schedule_tracker_mock.call_args_list
+    assert any(
+        c.kwargs.get("system") == "lucos_arachne" and c.kwargs.get("job_name") == "lucos_eolas"
+        for c in calls
+    ), f"Expected system='lucos_arachne', job_name='lucos_eolas' in calls: {calls}"
+
+
+def test_schedule_tracker_aggregate_ingestor_uses_v2():
+    """The end-of-run aggregate call uses system='lucos_arachne', job_name='ingestor'."""
+    _reset_mocks()
+    _get_source_hash_mock.return_value = _expected_hash(_CONTENT, _CONTENT_TYPE)
+    ingest.run_ingest()
+    calls = _update_schedule_tracker_mock.call_args_list
+    assert any(
+        c.kwargs.get("system") == "lucos_arachne" and c.kwargs.get("job_name") == "ingestor"
+        for c in calls
+    ), f"Expected aggregate ingestor call with system='lucos_arachne', job_name='ingestor' in: {calls}"
+
+
+def test_schedule_tracker_inference_uses_v2():
+    """The inference job uses system='lucos_arachne', job_name='inference'."""
+    _reset_mocks()
+    _get_source_hash_mock.return_value = _expected_hash(_CONTENT, _CONTENT_TYPE)
+    ingest.run_ingest()
+    calls = _update_schedule_tracker_mock.call_args_list
+    assert any(
+        c.kwargs.get("system") == "lucos_arachne" and c.kwargs.get("job_name") == "inference"
+        for c in calls
+    ), f"Expected inference call with system='lucos_arachne', job_name='inference' in: {calls}"
+
+
+def test_schedule_tracker_no_synthetic_system_ids():
+    """No updateScheduleTracker call should use a synthetic system ID (e.g. 'lucos_arachne_ingestor_*')."""
+    _reset_mocks()
+    _get_source_hash_mock.return_value = None
+    ingest.run_ingest()
+    calls = _update_schedule_tracker_mock.call_args_list
+    for c in calls:
+        system = c.kwargs.get("system", "")
+        assert not system.startswith("lucos_arachne_"), \
+            f"Found synthetic system ID in schedule_tracker call: {system!r}"

@@ -79,12 +79,12 @@ def test_compaction_uses_basic_auth():
 
 
 def test_compaction_reports_success_to_schedule_tracker():
-    """run_compaction calls updateScheduleTracker with success=True on success."""
+    """run_compaction calls updateScheduleTracker with v2 fields on success."""
     _reset_mocks()
     with patch("requests.post", return_value=_ok_response()):
         compact.run_compaction()
     _update_schedule_tracker_mock.assert_called_once_with(
-        success=True, system=compact.SYSTEM, frequency=compact.FREQUENCY_SECONDS
+        success=True, system="lucos_arachne", job_name="compaction", frequency=compact.FREQUENCY_SECONDS
     )
 
 
@@ -134,7 +134,7 @@ def test_compaction_does_not_emit_loganne_on_failure():
 
 
 def test_compaction_main_reports_failure_to_schedule_tracker():
-    """When run_compaction raises, main() reports success=False with frequency."""
+    """When run_compaction raises, main() reports success=False with v2 fields."""
     _reset_mocks()
     with patch("requests.post", return_value=_error_response()):
         try:
@@ -144,4 +144,6 @@ def test_compaction_main_reports_failure_to_schedule_tracker():
     _update_schedule_tracker_mock.assert_called_once()
     kwargs = _update_schedule_tracker_mock.call_args.kwargs
     assert kwargs.get("success") is False
+    assert kwargs.get("system") == "lucos_arachne"
+    assert kwargs.get("job_name") == "compaction"
     assert kwargs.get("frequency") == compact.FREQUENCY_SECONDS
