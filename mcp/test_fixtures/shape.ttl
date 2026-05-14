@@ -1,0 +1,46 @@
+@prefix rdf:   <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs:  <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix skos:  <http://www.w3.org/2004/02/skos/core#> .
+@prefix eolas: <https://eolas.l42.eu/metadata/> .
+@prefix ex:    <https://fixture.example/> .
+
+# ── Type metadata (skos:prefLabel + eolas:hasCategory per mcp/CLAUDE.md) ─────
+
+ex:Widget
+    skos:prefLabel "Widget"@en ;
+    eolas:hasCategory ex:Things .
+
+ex:Gadget
+    skos:prefLabel "Gadget"@en ;
+    eolas:hasCategory ex:Things .
+
+ex:Things
+    skos:prefLabel "Things"@en .
+
+# ── Widget instances — 3 total, 2 with ex:colour ─────────────────────────────
+#
+# Anti-regression fixture for count_by_property (#477 Cartesian-product bug):
+#   correct answer  → withProp = 2 (out of total = 3)
+#   non-DISTINCT Cartesian shape → inflated: 2 × 3 = 6 (wrong)
+
+ex:widget1
+    a ex:Widget ;
+    rdfs:label "Widget One" ;
+    ex:colour "red" .
+
+ex:widget2
+    a ex:Widget ;
+    rdfs:label "Widget Two" ;
+    ex:colour "blue" .
+
+ex:widget3
+    a ex:Widget ;
+    rdfs:label "Widget Three" .
+
+# ── Gadget instances — 5 total ────────────────────────────────────────────────
+
+ex:gadget1 a ex:Gadget ; skos:prefLabel "Gadget One"@en .
+ex:gadget2 a ex:Gadget ; skos:prefLabel "Gadget Two"@en .
+ex:gadget3 a ex:Gadget ; skos:prefLabel "Gadget Three"@en .
+ex:gadget4 a ex:Gadget ; skos:prefLabel "Gadget Four"@en .
+ex:gadget5 a ex:Gadget ; skos:prefLabel "Gadget Five"@en .

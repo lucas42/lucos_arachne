@@ -5,6 +5,10 @@ jobs:
   test:
     docker:
       - image: cimg/python:3.14
+      - image: stain/jena-fuseki
+        environment:
+          ADMIN_PASSWORD: admin
+          JVM_ARGS: -Xmx512m
     steps:
       - checkout
       - run:
