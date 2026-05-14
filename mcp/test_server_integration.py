@@ -51,24 +51,15 @@ def test_list_types_returns_both_fixture_types():
 def test_list_types_widget_count():
     """list_types must report 3 Widget instances."""
     result = server.list_types()
-    # The line for Widget should contain "3 instance"
-    widget_line = next(
-        (line for line in result.splitlines() if "fixture.example/Widget" in line),
-        None,
-    )
-    assert widget_line is not None, "Widget type not found in list_types output"
-    assert "3 instance" in widget_line, f"Expected 3 Widget instances, got: {widget_line}"
+    # list_types formats as "- Label (N instance(s))\n  URI: …" — the count is on
+    # the label line, not the URI line, so assert against the full result string.
+    assert "Widget (3 instance" in result, f"Expected 'Widget (3 instance' in result:\n{result}"
 
 
 def test_list_types_gadget_count():
     """list_types must report 5 Gadget instances."""
     result = server.list_types()
-    gadget_line = next(
-        (line for line in result.splitlines() if "fixture.example/Gadget" in line),
-        None,
-    )
-    assert gadget_line is not None, "Gadget type not found in list_types output"
-    assert "5 instance" in gadget_line, f"Expected 5 Gadget instances, got: {gadget_line}"
+    assert "Gadget (5 instance" in result, f"Expected 'Gadget (5 instance' in result:\n{result}"
 
 
 def test_list_types_includes_prefLabels():
