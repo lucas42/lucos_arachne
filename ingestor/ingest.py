@@ -42,13 +42,12 @@ def run_ingest():
 	changed_live: list[tuple] = []
 
 	for system, url in live_systems.items():
-		tracker_system = f"lucos_arachne_ingestor_{system}"
 		try:
 			(content, content_type) = fetch_url(system, url)
 			new_hash = "sha256:" + hashlib.sha256((content + content_type).encode("utf-8")).hexdigest()
 			if get_source_hash(url) == new_hash:
 				print(f"Skipping {system}: content unchanged (hash {new_hash})", flush=True)
-				updateScheduleTracker(success=True, system=tracker_system)
+				updateScheduleTracker(success=True, system="lucos_arachne", job_name=system)
 				continue
 			fragment = diff_graph_in_triplestore(url, content, content_type)
 			if fragment:
@@ -58,7 +57,7 @@ def run_ingest():
 			has_failures = True
 			error_message = f"Ingest of {system} failed: {e}"
 			print(error_message, flush=True)
-			updateScheduleTracker(success=False, system=tracker_system, message=error_message)
+			updateScheduleTracker(success=False, system="lucos_arachne", job_name=system, message=error_message)
 
 	# ── Execute Phase 1 atomically ────────────────────────────────────────────
 	if phase1_fragments:
@@ -75,29 +74,28 @@ def run_ingest():
 			for system, url, _, _, _ in changed_live:
 				updateScheduleTracker(
 					success=False,
-					system=f"lucos_arachne_ingestor_{system}",
+					system="lucos_arachne",
+					job_name=system,
 					message=error_message,
 				)
 			changed_live = []
 
 	# ── Post-Phase-1: update search indices and hashes ────────────────────────
 	for system, url, content, content_type, new_hash in changed_live:
-		tracker_system = f"lucos_arachne_ingestor_{system}"
 		try:
 			(item_ids, track_ids) = update_searchindex(system, content, content_type)
 			all_item_ids |= item_ids
 			all_track_ids |= track_ids
 			set_source_hash(url, new_hash)
-			updateScheduleTracker(success=True, system=tracker_system)
+			updateScheduleTracker(success=True, system="lucos_arachne", job_name=system)
 		except Exception as e:
 			has_failures = True
 			error_message = f"Post-ingest update for {system} failed: {e}"
 			print(error_message, flush=True)
-			updateScheduleTracker(success=False, system=tracker_system, message=error_message)
+			updateScheduleTracker(success=False, system="lucos_arachne", job_name=system, message=error_message)
 
 	# ── Ontologies: existing replace_graph approach ───────────────────────────
 	for system, (graph_uri, local_file, content_type) in ontology_cache.items():
-		tracker_system = f"lucos_arachne_ingestor_{system}"
 		try:
 			file_path = os.path.join(ONTOLOGIES_DIR, local_file)
 			with open(file_path, "r", encoding="utf-8") as f:
@@ -105,32 +103,31 @@ def run_ingest():
 			new_hash = "sha256:" + hashlib.sha256((content + content_type).encode("utf-8")).hexdigest()
 			if get_source_hash(graph_uri) == new_hash:
 				print(f"Skipping {system}: content unchanged (hash {new_hash})", flush=True)
-				updateScheduleTracker(success=True, system=tracker_system)
+				updateScheduleTracker(success=True, system="lucos_arachne", job_name=system)
 				continue
 			replace_graph_in_triplestore(graph_uri, content, content_type)
 			set_source_hash(graph_uri, new_hash)
 			any_changed = True
-			updateScheduleTracker(success=True, system=tracker_system)
+			updateScheduleTracker(success=True, system="lucos_arachne", job_name=system)
 		except Exception as e:
 			has_failures = True
 			error_message = f"Ingest of {system} failed: {e}"
 			print(error_message, flush=True)
-			updateScheduleTracker(success=False, system=tracker_system, message=error_message)
+			updateScheduleTracker(success=False, system="lucos_arachne", job_name=system, message=error_message)
 
 	# ── Phase 2: rebuild inferred graph if any source changed ─────────────────
-	tracker_system = "lucos_arachne_ingestor_inference"
 	if any_changed:
 		try:
 			compute_inferences()
-			updateScheduleTracker(success=True, system=tracker_system)
+			updateScheduleTracker(success=True, system="lucos_arachne", job_name="inference")
 		except Exception as e:
 			has_failures = True
 			error_message = f"Inference computation failed: {e}"
 			print(error_message, flush=True)
-			updateScheduleTracker(success=False, system=tracker_system, message=error_message)
+			updateScheduleTracker(success=False, system="lucos_arachne", job_name="inference", message=error_message)
 	else:
 		print("Skipping inference: no source graphs changed this cycle", flush=True)
-		updateScheduleTracker(success=True, system=tracker_system)
+		updateScheduleTracker(success=True, system="lucos_arachne", job_name="inference")
 
 	all_graph_uris = (
 		list(live_systems.values())
@@ -152,7 +149,7 @@ def run_ingest():
 	else:
 		human_readable = "Knowledge graph checked — no changes"
 	updateLoganne(type="knowledgeIngest", humanReadable=human_readable, url=BASE_URL)
-	updateScheduleTracker(success=True, system="lucos_arachne_ingestor")
+	updateScheduleTracker(success=True, system="lucos_arachne", job_name="ingestor")
 
 
 if __name__ == "__main__":
@@ -172,5 +169,5 @@ if __name__ == "__main__":
 		run_ingest()
 	except Exception as e:
 		error_message = f"Ingest failed: {e}"
-		updateScheduleTracker(success=False, system="lucos_arachne_ingestor", message=error_message)
+		updateScheduleTracker(success=False, system="lucos_arachne", job_name="ingestor", message=error_message)
 		sys.exit(error_message)
