@@ -4,7 +4,9 @@ Arachne MCP Server
 Exposes the lucos_arachne knowledge graph via the Model Context Protocol.
 """
 
+import asyncio
 import os
+import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Optional
@@ -20,6 +22,13 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 from starlette.routing import Mount, Route
+
+from probe_parameters import (
+    PROBE_BUDGET_S,
+    PROBE_INTERVAL_S,
+    PROBE_STALE_THRESHOLD_S,
+    PROBE_TOOLS,
+)
 
 RESOURCES_DIR = Path(__file__).parent / "resources"
 
@@ -829,10 +838,153 @@ class BearerAuthMiddleware(BaseHTTPMiddleware):
         )
 
 
+# ---------------------------------------------------------------------------
+# Production probe runner
+# ---------------------------------------------------------------------------
+#
+# Each MCP tool is exercised periodically against the live production endpoint.
+# Results are cached in _probe_cache and surfaced as Tier 2 checks in /_info.
+#
+# Design constraints (see #503):
+#   - /_info must respond within lucos_monitoring's hard 1 s timeout.
+#     The probe must therefore run asynchronously; /_info only reads the cache.
+#   - The probe enforces a per-tool wall-clock budget (PROBE_BUDGET_S) that is
+#     well below Fuseki's 30 s service guard, so scale-drift is caught first.
+#   - A timeout in the probe is not a fatal server error — it is recorded in
+#     the cache as ok=False.  The MCP server itself stays healthy.
+#   - If the probe hasn't produced a fresh result within PROBE_STALE_THRESHOLD_S,
+#     the check reports ok=False rather than surfacing a stale ok=True reading.
+
+# Keyed by tool name.  Values: {"ok": bool, "techDetail": str, "timestamp": float}
+# Empty until the first probe cycle completes (typically a few seconds after startup).
+_probe_cache: dict[str, dict] = {}
+
+# Dispatch table for the probe runner — maps tool name to callable.
+# Populated here (after the tool functions are defined above).
+_PROBE_TOOL_FUNCS: dict[str, callable] = {
+    "search":            search,
+    "get_entity":        get_entity,
+    "list_types":        list_types,
+    "find_entities":     find_entities,
+    "count_by_property": count_by_property,
+}
+
+
+def _build_probe_checks() -> dict:
+    """
+    Build the checks dict for /_info by reading _probe_cache.
+
+    Synchronous and always fast — reads only from an in-memory dict.
+
+    Three states per tool:
+      - Not yet probed (server starting up): ok=False, "not yet probed" detail.
+      - Stale (probe runner fell behind): ok=False, age reported.
+      - Current: relays the cached ok/techDetail verbatim.
+    """
+    checks: dict[str, dict] = {}
+    now = time.monotonic()
+    for tool_name, _ in PROBE_TOOLS:
+        check_key = f"mcp_{tool_name}"
+        if tool_name not in _probe_cache:
+            checks[check_key] = {
+                "ok": False,
+                "techDetail": (
+                    f"MCP tool {tool_name} has not been probed yet"
+                    f" — server may still be starting up"
+                ),
+            }
+        else:
+            entry = _probe_cache[tool_name]
+            age = now - entry["timestamp"]
+            if age > PROBE_STALE_THRESHOLD_S:
+                checks[check_key] = {
+                    "ok": False,
+                    "techDetail": (
+                        f"MCP tool {tool_name} probe result is stale"
+                        f" ({age:.0f}s old, threshold {PROBE_STALE_THRESHOLD_S:.0f}s)"
+                        f" — the probe runner may have stopped"
+                    ),
+                }
+            else:
+                checks[check_key] = {
+                    "ok": entry["ok"],
+                    "techDetail": entry["techDetail"],
+                }
+    return checks
+
+
+async def _run_probe_loop():
+    """
+    Background task: periodically exercise each MCP tool and cache the result.
+
+    Each tool is called via asyncio.to_thread (the tools are synchronous) and
+    wrapped in asyncio.wait_for with PROBE_BUDGET_S.  A stagger delay of
+    PROBE_INTERVAL_S / len(PROBE_TOOLS) is inserted between tools so that no
+    two tools run concurrently against Fuseki.
+
+    Cancellation (on server shutdown) is handled cleanly via CancelledError.
+    """
+    stagger_s = PROBE_INTERVAL_S / len(PROBE_TOOLS)
+
+    while True:
+        for tool_name, kwargs in PROBE_TOOLS:
+            func = _PROBE_TOOL_FUNCS.get(tool_name)
+            if func is None:
+                # Shouldn't happen — safety guard in case the dispatch table is
+                # ever out of sync with PROBE_TOOLS.
+                _probe_cache[tool_name] = {
+                    "ok": False,
+                    "techDetail": (
+                        f"MCP tool {tool_name} is not registered in the probe dispatch table"
+                    ),
+                    "timestamp": time.monotonic(),
+                }
+                await asyncio.sleep(stagger_s)
+                continue
+
+            start = time.monotonic()
+            try:
+                await asyncio.wait_for(
+                    asyncio.to_thread(func, **kwargs),
+                    timeout=PROBE_BUDGET_S,
+                )
+                elapsed = time.monotonic() - start
+                _probe_cache[tool_name] = {
+                    "ok": True,
+                    "techDetail": (
+                        f"{tool_name} completed in {elapsed:.2f}s"
+                        f" (budget {PROBE_BUDGET_S:.0f}s)"
+                    ),
+                    "timestamp": time.monotonic(),
+                }
+            except asyncio.TimeoutError:
+                elapsed = time.monotonic() - start
+                _probe_cache[tool_name] = {
+                    "ok": False,
+                    "techDetail": (
+                        f"MCP tool {tool_name} exceeded {PROBE_BUDGET_S:.0f}s budget"
+                        f" against production data (took {elapsed:.1f}s before timeout)"
+                    ),
+                    "timestamp": time.monotonic(),
+                }
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                _probe_cache[tool_name] = {
+                    "ok": False,
+                    "techDetail": (
+                        f"MCP tool {tool_name} raised an unexpected error: {exc}"
+                    ),
+                    "timestamp": time.monotonic(),
+                }
+
+            await asyncio.sleep(stagger_s)
+
+
 async def info(request):
     return JSONResponse({
         "system": os.environ.get("SYSTEM", "lucos_arachne"),
-        "checks": {},
+        "checks": _build_probe_checks(),
         "metrics": {},
         "ci": {"circle": "gh/lucas42/lucos_arachne"},
         "title": "Arachne MCP",
@@ -845,7 +997,15 @@ mcp_asgi_app = mcp.streamable_http_app()
 @asynccontextmanager
 async def lifespan(app):
     async with mcp_asgi_app.router.lifespan_context(app):
-        yield
+        probe_task = asyncio.create_task(_run_probe_loop())
+        try:
+            yield
+        finally:
+            probe_task.cancel()
+            try:
+                await probe_task
+            except asyncio.CancelledError:
+                pass
 
 
 app = Starlette(

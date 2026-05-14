@@ -6,6 +6,7 @@ can run without any external services.
 """
 
 import json
+import time
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -1166,3 +1167,146 @@ def test_budgets_below_fuseki_service_guard():
     assert server._BUDGET_RESOLVE_S < 30
     assert server._BUDGET_QUERY_S < 30
     assert server._BUDGET_HEALTH_S < 30
+
+
+# ---------------------------------------------------------------------------
+# _build_probe_checks
+# ---------------------------------------------------------------------------
+
+def test_build_probe_checks_empty_cache_all_not_probed():
+    """All five checks report ok=False before the first probe cycle completes."""
+    original = dict(server._probe_cache)
+    server._probe_cache.clear()
+    try:
+        checks = server._build_probe_checks()
+        assert len(checks) == 5
+        for key, check in checks.items():
+            assert check["ok"] is False, f"{key} should be ok=False before first probe"
+            assert "not been probed yet" in check["techDetail"]
+    finally:
+        server._probe_cache.update(original)
+
+
+def test_build_probe_checks_reads_cached_ok_result():
+    """_build_probe_checks returns ok=True when the cache has a fresh successful result."""
+    original = dict(server._probe_cache)
+    server._probe_cache.clear()
+    server._probe_cache["list_types"] = {
+        "ok": True,
+        "techDetail": "list_types completed in 0.42s (budget 5s)",
+        "timestamp": time.monotonic(),
+    }
+    try:
+        checks = server._build_probe_checks()
+        assert checks["mcp_list_types"]["ok"] is True
+        assert "0.42s" in checks["mcp_list_types"]["techDetail"]
+    finally:
+        server._probe_cache.clear()
+        server._probe_cache.update(original)
+
+
+def test_build_probe_checks_reads_cached_fail_result():
+    """_build_probe_checks relays ok=False from a timeout or error result."""
+    original = dict(server._probe_cache)
+    server._probe_cache.clear()
+    server._probe_cache["count_by_property"] = {
+        "ok": False,
+        "techDetail": (
+            "MCP tool count_by_property exceeded 5s budget"
+            " against production data (took 5.0s before timeout)"
+        ),
+        "timestamp": time.monotonic(),
+    }
+    try:
+        checks = server._build_probe_checks()
+        assert checks["mcp_count_by_property"]["ok"] is False
+        assert "exceeded 5s budget" in checks["mcp_count_by_property"]["techDetail"]
+        assert "against production data" in checks["mcp_count_by_property"]["techDetail"]
+    finally:
+        server._probe_cache.clear()
+        server._probe_cache.update(original)
+
+
+def test_build_probe_checks_stale_result_reported_as_failed():
+    """_build_probe_checks returns ok=False when the cached result is older than the stale threshold."""
+    from probe_parameters import PROBE_STALE_THRESHOLD_S
+
+    original = dict(server._probe_cache)
+    server._probe_cache.clear()
+    stale_timestamp = time.monotonic() - PROBE_STALE_THRESHOLD_S - 1
+    server._probe_cache["search"] = {
+        "ok": True,
+        "techDetail": "search completed in 0.10s (budget 5s)",
+        "timestamp": stale_timestamp,
+    }
+    try:
+        checks = server._build_probe_checks()
+        assert checks["mcp_search"]["ok"] is False
+        assert "stale" in checks["mcp_search"]["techDetail"]
+        assert "probe runner may have stopped" in checks["mcp_search"]["techDetail"]
+    finally:
+        server._probe_cache.clear()
+        server._probe_cache.update(original)
+
+
+def test_build_probe_checks_returns_all_five_tools():
+    """_build_probe_checks always returns exactly five check keys, one per tool."""
+    original = dict(server._probe_cache)
+    server._probe_cache.clear()
+    try:
+        checks = server._build_probe_checks()
+        expected_keys = {
+            "mcp_search",
+            "mcp_get_entity",
+            "mcp_list_types",
+            "mcp_find_entities",
+            "mcp_count_by_property",
+        }
+        assert set(checks.keys()) == expected_keys
+    finally:
+        server._probe_cache.update(original)
+
+
+def test_build_probe_checks_disambiguates_budget_exceeded_from_fuseki_outage():
+    """
+    The techDetail for a budget-exceeded failure explicitly names the tool and
+    mentions production data, so on-call SREs don't mistake it for a Fuseki outage.
+    """
+    original = dict(server._probe_cache)
+    server._probe_cache.clear()
+    server._probe_cache["list_types"] = {
+        "ok": False,
+        "techDetail": (
+            "MCP tool list_types exceeded 5s budget"
+            " against production data (took 5.0s before timeout)"
+        ),
+        "timestamp": time.monotonic(),
+    }
+    try:
+        checks = server._build_probe_checks()
+        detail = checks["mcp_list_types"]["techDetail"]
+        assert "list_types" in detail, "tool name must appear in detail for fast triage"
+        assert "production data" in detail, "must mention production data to disambiguate from Fuseki outage"
+    finally:
+        server._probe_cache.clear()
+        server._probe_cache.update(original)
+
+
+# ---------------------------------------------------------------------------
+# Probe constants regression
+# ---------------------------------------------------------------------------
+
+def test_probe_budget_below_fuseki_service_guard():
+    """PROBE_BUDGET_S must be strictly below Fuseki's 30 s service guard."""
+    from probe_parameters import PROBE_BUDGET_S
+    assert PROBE_BUDGET_S < 30
+
+
+def test_probe_tool_funcs_covers_all_probe_tools():
+    """_PROBE_TOOL_FUNCS must have an entry for every tool in PROBE_TOOLS."""
+    from probe_parameters import PROBE_TOOLS
+    for tool_name, _ in PROBE_TOOLS:
+        assert tool_name in server._PROBE_TOOL_FUNCS, (
+            f"_PROBE_TOOL_FUNCS is missing an entry for '{tool_name}' "
+            f"— probe runner will skip this tool silently"
+        )
