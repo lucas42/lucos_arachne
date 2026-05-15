@@ -18,7 +18,7 @@ These are different conceptual namespaces. They may happen to coincide on the sa
 - **`lucos_media_metadata_api`** (Go). This is the API service that ingests track data and serves the RDF export at `/v2/export` and the ontology document at `/ontology`. Its `APP_ORIGIN` is `https://media-api.l42.eu` in production.
 - **`lucos_media_metadata_manager`** (PHP). This is the user-facing track-management UI. Its `APP_ORIGIN` is `https://media-metadata.l42.eu` in production. It hosts the per-track and per-collection pages users link to.
 
-The Go API has a cross-service env var, `MEDIA_METADATA_MANAGER_ORIGIN`, that points at the PHP manager. That's the standard lucos pattern for referencing another service — the same shape as `LOGANNE_ENDPOINT` or `LUCOS_CONTACTS_URL`. The Go API uses this variable when constructing resource URIs, because the resource pages those URIs refer to live on the PHP manager.
+The Go API has a cross-service env var, `MEDIA_METADATA_MANAGER_ORIGIN`, that points at the PHP manager. That's the standard lucos pattern for referencing another service — the same shape as `LOGANNE_ENDPOINT` or `LUCOS_CONTACTS_ORIGIN`. The Go API uses this variable when constructing resource URIs, because the resource pages those URIs refer to live on the PHP manager.
 
 The bug is that this same variable was also used when constructing vocabulary URIs — `mediaMetadataManagerOrigin + "/ontology#trackLanguage"`, etc. The vocab URIs therefore ended up at `media-metadata.l42.eu/ontology#…`, a hostname that doesn't serve the ontology document (the PHP manager has no `/ontology` route — it 404s). The document is served by the Go API at `media-api.l42.eu/ontology`. Vocab URIs and document hostname were silently divergent.
 
