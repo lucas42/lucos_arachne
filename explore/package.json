@@ -19,7 +19,7 @@
   "dependencies": {
     "ejs": "^5.0.2",
     "express": "^5.2.1",
-    "express-rate-limit": "^8.5.1"
+    "express-rate-limit": "^8.5.2"
   },
   "devDependencies": {
     "@zazuko/yasgui": "^4.6.1",
