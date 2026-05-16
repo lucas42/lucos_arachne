@@ -60,7 +60,8 @@ services:
       - KEY_LUCOS_CONTACTS
       - KEY_LUCOS_MEDIA_METADATA_API
       - KEY_LUCOS_CONFIGY
-      - SYSTEM=lucos_arachne
+      - SYSTEM
+      - INGEST_STARTUP_DELAY
       - APP_ORIGIN
       - CLIENT_KEYS
     depends_on:
