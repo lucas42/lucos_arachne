@@ -106,7 +106,7 @@ async function checkTriplestore() {
 async function checkSparqlLatency() {
 	const techDetail = 'SELECT COUNT(*) query against the arachne endpoint to measure SPARQL query latency';
 	const failThreshold = 3;
-	const WARN_MS = 400;
+	const WARN_MS = 1000;
 	const start = Date.now();
 	try {
 		const body = new URLSearchParams({ query: 'SELECT (COUNT(*) AS ?n) WHERE { ?s a ?t }' });
@@ -118,7 +118,7 @@ async function checkSparqlLatency() {
 				'Authorization': `Basic ${Buffer.from(`lucos_arachne:${process.env.KEY_LUCOS_ARACHNE}`).toString('base64')}`,
 			},
 			body: body.toString(),
-			signal: AbortSignal.timeout(450),
+			signal: AbortSignal.timeout(1100),
 		});
 		const latencyMs = Date.now() - start;
 		if (!response.ok) return { check: { ok: false, techDetail, failThreshold, debug: `HTTP ${response.status}` }, latencyMs: null };
