@@ -1,4 +1,4 @@
-"""Tests for the webhookController and infoController — *Created, *Deleted, and *Merged event handling."""
+"""Tests for the webhookController and infoController — *Created, *Deleted, *Merged, *Linked, and *Unlinked event handling."""
 import io
 import json
 import os
@@ -284,6 +284,48 @@ def test_merged_event_idempotent_second_call():
             "targetUri": "https://eolas.l42.eu/metadata/new",
         })
         assert status == 202
+
+
+# ---------------------------------------------------------------------------
+# *Linked handler
+# ---------------------------------------------------------------------------
+
+
+def test_linked_event_fetches_and_replaces():
+    _fetch_url_mock.return_value = ("<rdf/>", "application/rdf+xml")
+    status, body = _make_request({
+        "type": "contactLinked",
+        "source": "lucos_contacts",
+        "url": "https://contacts.l42.eu/people/42",
+    })
+    assert status == 202
+    assert body == "Accepted"
+    _fetch_url_mock.assert_called_once_with("lucos_contacts", "https://contacts.l42.eu/people/42")
+    _replace_item_mock.assert_called_once()
+    _update_searchindex_mock.assert_called_once()
+    _delete_item_mock.assert_not_called()
+    _delete_doc_mock.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# *Unlinked handler
+# ---------------------------------------------------------------------------
+
+
+def test_unlinked_event_fetches_and_replaces():
+    _fetch_url_mock.return_value = ("<rdf/>", "application/rdf+xml")
+    status, body = _make_request({
+        "type": "contactUnlinked",
+        "source": "lucos_contacts",
+        "url": "https://contacts.l42.eu/people/42",
+    })
+    assert status == 202
+    assert body == "Accepted"
+    _fetch_url_mock.assert_called_once_with("lucos_contacts", "https://contacts.l42.eu/people/42")
+    _replace_item_mock.assert_called_once()
+    _update_searchindex_mock.assert_called_once()
+    _delete_item_mock.assert_not_called()
+    _delete_doc_mock.assert_not_called()
 
 
 # ---------------------------------------------------------------------------

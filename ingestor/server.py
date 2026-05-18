@@ -28,7 +28,7 @@ def _process_event(event):
 	"""Process a validated webhook event. Runs in a thread pool worker."""
 	try:
 		event_type = event["type"]
-		if event_type.endswith("Created") or event_type.endswith("Added") or event_type.endswith("Updated"):
+		if event_type.endswith("Created") or event_type.endswith("Added") or event_type.endswith("Updated") or event_type.endswith("Linked") or event_type.endswith("Unlinked"):
 			(content, content_type) = fetch_url(event["source"], event["url"])
 			replace_item_in_triplestore(event["url"], live_systems[event["source"]], content, content_type)
 			update_searchindex(event["source"], content, content_type)
@@ -113,7 +113,7 @@ class WebhookHandler(BaseHTTPRequestHandler):
 			self.send_error(400, "Invalid json", str(error))
 			return
 		event_type = event.get("type", "")
-		if not any(event_type.endswith(suffix) for suffix in ("Created", "Added", "Updated", "Deleted", "Merged")):
+		if not any(event_type.endswith(suffix) for suffix in ("Created", "Added", "Updated", "Linked", "Unlinked", "Deleted", "Merged")):
 			self.send_error(404, "Webhook type Not Found")
 			return
 		_executor.submit(_process_event, event)
