@@ -1,5 +1,9 @@
 # lucos_arachne
 
+## Ontology source
+
+This repo consumes ontology and entity data from `lucos_eolas`. For conventions on the ontology side — declaring new predicates, adding property characteristics, using `skos:prefLabel` on meta-types — see [`lucos_eolas/CLAUDE.md`](https://github.com/lucas42/lucos_eolas/blob/main/CLAUDE.md).
+
 ## RDF Source Convention
 
 **RDF sources consumed by arachne must include type metadata for any `rdf:type` they emit.**
