@@ -11,18 +11,20 @@ EOLAS_NS = Namespace(f"https://eolas.l42.eu/ontology/")
 MMM = Namespace("https://media-api.l42.eu/ontology#")
 SDO = Namespace("https://schema.org/")
 
-# RDF/OWL types which shouldn't be indexed in search index
-IGNORE_TYPES = [
-	"http://www.w3.org/2002/07/owl#ObjectProperty",
-	"http://www.w3.org/2002/07/owl#Class",
-	"http://www.w3.org/2000/01/rdf-schema#Class",
-	"http://www.w3.org/2002/07/owl#DatatypeProperty",
-	"http://www.w3.org/2002/07/owl#Ontology",
-	"http://www.w3.org/2002/07/owl#TransitiveProperty",
-	"http://www.w3.org/2002/07/owl#AsymmetricProperty",
-	"https://eolas.l42.eu/ontology/Category",
-	"http://www.w3.org/1999/02/22-rdf-syntax-ns#Property",
-]
+# Namespace prefixes whose types are OWL/RDFS infrastructure, not domain content.
+# Any rdf:type whose URI starts with one of these is a meta-type and should not
+# be indexed in the search index.  This replaces the old explicit IGNORE_TYPES
+# denylist, which was incomplete and required a code change each time a new OWL
+# property characteristic was used by a source.
+META_NAMESPACES = (
+	"http://www.w3.org/2002/07/owl#",
+	"http://www.w3.org/2000/01/rdf-schema#",
+	"http://www.w3.org/1999/02/22-rdf-syntax-ns#",
+)
+
+def is_meta_type(uri: str) -> bool:
+	"""Return True if the given type URI should be excluded from search indexing."""
+	return uri.startswith(META_NAMESPACES) or uri == "https://eolas.l42.eu/ontology/Category"
 
 KEY_LUCOS_ARACHNE = os.environ.get("KEY_LUCOS_ARACHNE")
 
@@ -80,7 +82,7 @@ def graph_to_typesense_docs(graph: Graph):
 
 		# type
 		for o in graph.objects(subj, RDF.type):
-			if str(o) in IGNORE_TYPES:
+			if is_meta_type(str(o)):
 				continue
 			
 			# If the type itself has a type of LanguageFamily, then the subject is a Language

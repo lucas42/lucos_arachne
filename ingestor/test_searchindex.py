@@ -20,6 +20,7 @@ from searchindex import (
     graph_to_typesense_docs,
     get_label,
     get_category,
+    is_meta_type,
 )
 
 MO = Namespace("http://purl.org/ontology/mo/")
@@ -508,3 +509,97 @@ def test_graph_to_typesense_docs_artist_absent_when_no_foaf_maker():
     docs = graph_to_typesense_docs(g)
     doc = next(d for d in docs if d["pref_label"] == "Mallard")
     assert "artist" not in doc
+
+
+# ---------------------------------------------------------------------------
+# is_meta_type — unit tests for the namespace-based filter
+# ---------------------------------------------------------------------------
+
+def test_is_meta_type_owl_uri():
+    assert is_meta_type("http://www.w3.org/2002/07/owl#ObjectProperty") is True
+
+def test_is_meta_type_rdfs_uri():
+    assert is_meta_type("http://www.w3.org/2000/01/rdf-schema#Class") is True
+
+def test_is_meta_type_rdf_uri():
+    assert is_meta_type("http://www.w3.org/1999/02/22-rdf-syntax-ns#Property") is True
+
+def test_is_meta_type_eolas_category():
+    assert is_meta_type("https://eolas.l42.eu/ontology/Category") is True
+
+def test_is_meta_type_domain_uri_not_matched():
+    assert is_meta_type("http://purl.org/ontology/mo/Track") is False
+
+def test_is_meta_type_eolas_domain_uri_not_matched():
+    assert is_meta_type("https://eolas.l42.eu/ontology/City") is False
+
+
+# ---------------------------------------------------------------------------
+# graph_to_typesense_docs — namespace-based meta-type filter
+# ---------------------------------------------------------------------------
+
+def test_graph_to_typesense_docs_skips_owl_symmetric_property():
+    """owl:SymmetricProperty is filtered by namespace (was not in old IGNORE_TYPES)."""
+    g = Graph()
+    subj = URIRef("http://example.com/prop/symmetricProp")
+    g.add((subj, RDF.type, OWL.SymmetricProperty))
+    docs = graph_to_typesense_docs(g)
+    assert docs == []
+
+
+def test_graph_to_typesense_docs_skips_owl_functional_property():
+    """owl:FunctionalProperty is filtered by namespace (was not in old IGNORE_TYPES)."""
+    g = Graph()
+    subj = URIRef("http://example.com/prop/functionalProp")
+    g.add((subj, RDF.type, OWL.FunctionalProperty))
+    docs = graph_to_typesense_docs(g)
+    assert docs == []
+
+
+def test_graph_to_typesense_docs_skips_owl_named_individual():
+    """owl:NamedIndividual is filtered by namespace (was not in old IGNORE_TYPES)."""
+    g = Graph()
+    subj = URIRef("http://example.com/thing/someIndividual")
+    g.add((subj, RDF.type, OWL.NamedIndividual))
+    docs = graph_to_typesense_docs(g)
+    assert docs == []
+
+
+def test_graph_to_typesense_docs_skips_incident_shape():
+    """Subject with rdf:type owl:AsymmetricProperty + owl:ObjectProperty + skos:prefLabel produces no doc.
+
+    This is the exact incident shape from lucos_arachne#543 — a source declared a new
+    predicate with both types and a prefLabel, which crashed the ingestor before the fix.
+    """
+    g = Graph()
+    subj = URIRef("http://example.com/prop/asymmetricProp")
+    g.add((subj, RDF.type, OWL.AsymmetricProperty))
+    g.add((subj, RDF.type, OWL.ObjectProperty))
+    g.add((subj, SKOS.prefLabel, Literal("Asymmetric Property")))
+    docs = graph_to_typesense_docs(g)
+    assert docs == []
+
+
+def test_graph_to_typesense_docs_skips_eolas_category():
+    """eolas:Category is still skipped as a domain meta-type (explicit exception)."""
+    EOLAS_ONT = Namespace("https://eolas.l42.eu/ontology/")
+    g = Graph()
+    subj = URIRef("https://eolas.l42.eu/ontology/Technological")
+    g.add((subj, RDF.type, EOLAS_ONT.Category))
+    g.add((subj, SKOS.prefLabel, Literal("Technological")))
+    docs = graph_to_typesense_docs(g)
+    assert docs == []
+
+
+def test_graph_to_typesense_docs_domain_type_not_filtered():
+    """Domain types (e.g. mo:Track) are still indexed — namespace check must not over-match."""
+    g = _make_item_graph(
+        "https://eolas.l42.eu/metadata/person/ada-lovelace/",
+        "https://eolas.l42.eu/ontology/Person",
+        "Person",
+        "Ada Lovelace",
+    )
+    docs = graph_to_typesense_docs(g)
+    assert len(docs) == 1
+    assert docs[0]["pref_label"] == "Ada Lovelace"
+    assert docs[0]["type"] == "Person"
