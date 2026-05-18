@@ -47,7 +47,9 @@ def get_label(graph, uri):
 	raise ValueError(
 		f"Source RDF does not include a label for <{uri}>. "
 		f"The source's RDF export must include type metadata (skos:prefLabel and eolas:hasCategory) "
-		f"for every rdf:type it emits. See lucas42/lucos_arachne#371."
+		f"for every domain rdf:type it emits. "
+		f"(OWL/RDFS infrastructure types are excluded — see is_meta_type().) "
+		f"See lucas42/lucos_arachne#371."
 	)
 
 def get_category(graph, type):
@@ -58,7 +60,9 @@ def get_category(graph, type):
 	raise ValueError(
 		f"Source RDF does not include an eolas:hasCategory mapping for type <{type}>. "
 		f"The source's RDF export must include type metadata (skos:prefLabel and eolas:hasCategory) "
-		f"for every rdf:type it emits. See lucas42/lucos_arachne#371."
+		f"for every domain rdf:type it emits. "
+		f"(OWL/RDFS infrastructure types are excluded — see is_meta_type().) "
+		f"See lucas42/lucos_arachne#371."
 	)
 
 def graph_to_typesense_docs(graph: Graph):
