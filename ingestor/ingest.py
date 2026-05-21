@@ -8,8 +8,9 @@ from triplestore import (
     live_systems, ontology_cache, ONTOLOGIES_DIR, INFERRED_GRAPH, METADATA_GRAPH,
     replace_graph_in_triplestore, cleanup_triplestore, compute_inferences,
     get_source_hash, set_source_hash, diff_graph_in_triplestore, execute_sparql_update,
+    session as triplestore_session,
 )
-from searchindex import update_searchindex, cleanup_searchindex
+from searchindex import update_searchindex, cleanup_searchindex, update_person_docs_in_searchindex
 from loganne import updateLoganne
 from schedule_tracker import updateScheduleTracker
 
@@ -128,6 +129,18 @@ def run_ingest():
 	else:
 		print("Skipping inference: no source graphs changed this cycle", flush=True)
 		updateScheduleTracker(success=True, system="lucos_arachne", job_name="inference")
+
+	# ── Person-merge step: compute foaf:Person closures and upsert merged docs ──
+	# Runs after all source ingests so the triplestore reflects the full current state
+	# (including any newly-added owl:sameAs / preferredIdentifier triples).
+	try:
+		contacts_graph_uri = live_systems.get("lucos_contacts", "")
+		person_ids = update_person_docs_in_searchindex(triplestore_session, contacts_graph_uri)
+		all_item_ids |= person_ids
+	except Exception as e:
+		has_failures = True
+		error_message = f"Person merge step failed: {e}"
+		print(error_message, flush=True)
 
 	all_graph_uris = (
 		list(live_systems.values())

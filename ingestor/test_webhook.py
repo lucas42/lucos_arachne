@@ -22,6 +22,8 @@ _merge_items_mock = MagicMock()
 _update_searchindex_mock = MagicMock()
 _delete_doc_mock = MagicMock()
 
+_update_person_docs_mock = MagicMock()
+
 _live_systems = {
     "lucos_eolas": "https://eolas.l42.eu/metadata/all/data/",
     "lucos_contacts": "https://contacts.l42.eu/people/all",
@@ -36,6 +38,7 @@ for mod_name, attrs in [
             "replace_item_in_triplestore": _replace_item_mock,
             "delete_item_in_triplestore": _delete_item_mock,
             "merge_items_in_triplestore": _merge_items_mock,
+            "session": MagicMock(),
         },
     ),
     (
@@ -43,6 +46,7 @@ for mod_name, attrs in [
         {
             "update_searchindex": _update_searchindex_mock,
             "delete_doc_in_searchindex": _delete_doc_mock,
+            "update_person_docs_in_searchindex": _update_person_docs_mock,
         },
     ),
 ]:
@@ -123,6 +127,7 @@ def _make_request(body: dict, path: str = "/webhook", auth: str | None = None):
     _merge_items_mock.reset_mock()
     _update_searchindex_mock.reset_mock()
     _delete_doc_mock.reset_mock()
+    _update_person_docs_mock.reset_mock()
 
     handler.webhookController()
 
@@ -398,3 +403,62 @@ def test_info_failed_ingestion_count_reflects_current_value():
     _server_module._failed_ingestion_count = 3
     _, data = _make_info_request()
     assert data["metrics"]["failed_ingestion_count"]["value"] == 3
+
+
+# ---------------------------------------------------------------------------
+# Person-merge step: update_person_docs_in_searchindex called on webhook events
+# ---------------------------------------------------------------------------
+
+
+def test_linked_event_triggers_person_merge():
+    """
+    contactLinked event: after refetching and indexing, update_person_docs_in_searchindex
+    is called so that owl:sameAs closures (e.g. a newly-linked eolas Person) are merged
+    into a single document and the previously-standalone eolas doc is removed.
+
+    This covers acceptance criterion 5 of lucos_arachne#539.
+    """
+    _fetch_url_mock.return_value = ("<rdf/>", "application/rdf+xml")
+    _make_request({
+        "type": "contactLinked",
+        "source": "lucos_contacts",
+        "url": "https://contacts.l42.eu/people/42",
+    })
+    _update_person_docs_mock.assert_called_once()
+    # Must be called with the contacts graph URI
+    call_args = _update_person_docs_mock.call_args
+    assert call_args[0][1] == _live_systems["lucos_contacts"]
+
+
+def test_created_event_triggers_person_merge():
+    """contactCreated also triggers the Person-merge step."""
+    _fetch_url_mock.return_value = ("<rdf/>", "application/rdf+xml")
+    _make_request({
+        "type": "contactCreated",
+        "source": "lucos_contacts",
+        "url": "https://contacts.l42.eu/people/43",
+    })
+    _update_person_docs_mock.assert_called_once()
+
+
+def test_deleted_event_does_not_trigger_person_merge():
+    """Delete events do not call update_person_docs_in_searchindex."""
+    _make_request({
+        "type": "contactDeleted",
+        "source": "lucos_contacts",
+        "url": "https://contacts.l42.eu/people/44",
+    })
+    _update_person_docs_mock.assert_not_called()
+
+
+def test_merged_event_triggers_person_merge():
+    """Merge events call update_person_docs_in_searchindex — the sameAs topology
+    changes when two contacts are merged, so secondary_uris must be recomputed."""
+    _fetch_url_mock.return_value = ("<rdf/>", "application/rdf+xml")
+    _make_request({
+        "type": "contactMerged",
+        "source": "lucos_contacts",
+        "sourceUri": "https://contacts.l42.eu/people/old",
+        "targetUri": "https://contacts.l42.eu/people/new",
+    })
+    _update_person_docs_mock.assert_called_once()
