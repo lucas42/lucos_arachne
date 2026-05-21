@@ -7,6 +7,8 @@ so we inject a dummy value before importing.
 import os
 os.environ.setdefault("KEY_LUCOS_ARACHNE", "test-key")
 
+import json
+from unittest.mock import MagicMock, patch, call
 from rdflib import Graph, Namespace, RDF, RDFS, Literal, URIRef
 from rdflib.namespace import SKOS, FOAF
 from rdflib.namespace import DCTERMS
@@ -21,6 +23,9 @@ from searchindex import (
     get_label,
     get_category,
     is_meta_type,
+    _find_primary_uri,
+    compute_person_closures,
+    update_person_docs_in_searchindex,
 )
 
 MO = Namespace("http://purl.org/ontology/mo/")
@@ -603,3 +608,374 @@ def test_graph_to_typesense_docs_domain_type_not_filtered():
     assert len(docs) == 1
     assert docs[0]["pref_label"] == "Ada Lovelace"
     assert docs[0]["type"] == "Person"
+
+
+def test_graph_to_typesense_docs_skips_foaf_person():
+    """foaf:Person subjects are excluded — they are handled by the Person-merge step."""
+    g = Graph()
+    contact_uri = URIRef("https://contacts.l42.eu/people/1")
+    g.add((contact_uri, RDF.type, FOAF.Person))
+    g.add((contact_uri, FOAF.name, Literal("Alice")))
+    docs = graph_to_typesense_docs(g)
+    assert docs == []
+
+
+# ---------------------------------------------------------------------------
+# _find_primary_uri — pure-function unit tests
+# ---------------------------------------------------------------------------
+
+def test_find_primary_uri_single_uri():
+    """Single URI with no preferredIdentifier edges — returns that URI (lex fallback)."""
+    result = _find_primary_uri({"https://example.com/a"}, {})
+    assert result == "https://example.com/a"
+
+
+def test_find_primary_uri_no_edges_lexicographic_fallback():
+    """Multiple URIs, no preferredIdentifier edges — returns lexicographic minimum."""
+    uris = {"https://z.example.com/a", "https://a.example.com/b", "https://m.example.com/c"}
+    result = _find_primary_uri(uris, {})
+    assert result == min(uris)
+
+
+def test_find_primary_uri_single_edge():
+    """A → B: B has no outgoing edge — B is the terminal/primary."""
+    a = "https://contacts.l42.eu/people/1"
+    b = "https://eolas.l42.eu/metadata/person/alice/"
+    result = _find_primary_uri({a, b}, {a: b})
+    assert result == b
+
+
+def test_find_primary_uri_chain():
+    """Chain A → B → C: C has no outgoing edge — C is the primary."""
+    a = "https://contacts.l42.eu/people/1"
+    b = "https://eolas.l42.eu/metadata/person/alice/"
+    c = "https://canonical.example.com/person/42"
+    result = _find_primary_uri({a, b, c}, {a: b, b: c})
+    assert result == c
+
+
+def test_find_primary_uri_edge_to_non_member_ignored():
+    """preferredIdentifier edge to a URI outside the closure does not affect selection."""
+    a = "https://contacts.l42.eu/people/1"
+    b = "https://eolas.l42.eu/metadata/person/alice/"
+    outside = "https://other.example.com/person/99"
+    # A → outside (outside not in closure), B has no outgoing edge → lex fallback
+    result = _find_primary_uri({a, b}, {a: outside})
+    assert result == min(a, b)
+
+
+# ---------------------------------------------------------------------------
+# compute_person_closures — unit tests with mock triplestore session
+# ---------------------------------------------------------------------------
+
+CONTACTS_GRAPH = "https://contacts.l42.eu/people/all"
+FOAF_PERSON_URI = "http://xmlns.com/foaf/0.1/Person"
+OWL_SAME_AS_URI = "http://www.w3.org/2002/07/owl#sameAs"
+PREFERRED_ID_URI = "https://eolas.l42.eu/ontology/preferredIdentifier"
+
+CONTACT_URI = "https://contacts.l42.eu/people/1"
+EOLAS_URI = "https://eolas.l42.eu/metadata/person/alice/"
+
+
+def _make_sparql_response(bindings: list) -> MagicMock:
+    """Build a mock response object returning the given SPARQL JSON bindings."""
+    mock_resp = MagicMock()
+    mock_resp.raise_for_status = MagicMock()
+    mock_resp.json.return_value = {"results": {"bindings": bindings}}
+    return mock_resp
+
+
+def _sparql_binding(var_values: dict) -> dict:
+    """Build one SPARQL result binding from {var_name: uri_str}."""
+    return {k: {"value": v, "type": "uri"} for k, v in var_values.items()}
+
+
+def _make_session_for_closures(persons, same_as_pairs, pref_id_pairs, contacts_subjects):
+    """
+    Build a mock session whose .post() side_effect returns canned SPARQL responses
+    for compute_person_closures' four queries (in order):
+      1. All foaf:Person URIs
+      2. owl:sameAs pairs between Persons
+      3. preferredIdentifier pairs between Persons
+      4. Subjects in the contacts graph
+    """
+    session = MagicMock()
+    responses = [
+        _make_sparql_response([_sparql_binding({"p": p}) for p in persons]),
+        _make_sparql_response([_sparql_binding({"a": a, "b": b}) for a, b in same_as_pairs]),
+        _make_sparql_response([_sparql_binding({"s": s, "o": o}) for s, o in pref_id_pairs]),
+        _make_sparql_response([_sparql_binding({"s": s}) for s in contacts_subjects]),
+    ]
+    session.post.side_effect = responses
+    return session
+
+
+def test_compute_person_closures_no_persons():
+    """No foaf:Person URIs in triplestore → empty list returned."""
+    session = MagicMock()
+    session.post.return_value = _make_sparql_response([])
+    result = compute_person_closures(session, CONTACTS_GRAPH)
+    assert result == []
+
+
+def test_compute_person_closures_two_linked_persons():
+    """Two Persons linked by owl:sameAs → one closure, not two."""
+    session = _make_session_for_closures(
+        persons=[CONTACT_URI, EOLAS_URI],
+        same_as_pairs=[(CONTACT_URI, EOLAS_URI)],  # contacts → eolas
+        pref_id_pairs=[(CONTACT_URI, EOLAS_URI)],  # contacts prefers eolas
+        contacts_subjects=[CONTACT_URI],
+    )
+    result = compute_person_closures(session, CONTACTS_GRAPH)
+    assert len(result) == 1
+    primary, secondary, is_contact = result[0]
+    assert primary == EOLAS_URI
+    assert secondary == [CONTACT_URI]
+    assert is_contact is True
+
+
+def test_compute_person_closures_no_pref_id_lexicographic_fallback():
+    """Two linked Persons, no preferredIdentifier → lexicographic min is primary."""
+    session = _make_session_for_closures(
+        persons=[CONTACT_URI, EOLAS_URI],
+        same_as_pairs=[(CONTACT_URI, EOLAS_URI)],
+        pref_id_pairs=[],
+        contacts_subjects=[CONTACT_URI],
+    )
+    result = compute_person_closures(session, CONTACTS_GRAPH)
+    assert len(result) == 1
+    primary, secondary, is_contact = result[0]
+    assert primary == min(CONTACT_URI, EOLAS_URI)
+    assert is_contact is True
+
+
+def test_compute_person_closures_chain_primary():
+    """Chain A → B → C: C is the terminal/primary."""
+    a = "https://a.example.com/person/1"
+    b = "https://b.example.com/person/2"
+    c = "https://c.example.com/person/3"
+    session = _make_session_for_closures(
+        persons=[a, b, c],
+        same_as_pairs=[(a, b), (b, c)],
+        pref_id_pairs=[(a, b), (b, c)],
+        contacts_subjects=[],
+    )
+    result = compute_person_closures(session, CONTACTS_GRAPH)
+    assert len(result) == 1
+    primary, secondary, is_contact = result[0]
+    assert primary == c
+    assert sorted(secondary) == sorted([a, b])
+    assert is_contact is False
+
+
+def test_compute_person_closures_single_contact_no_sameAs():
+    """Single contacts Person with no sameAs → one-element closure, is_contact=True."""
+    session = _make_session_for_closures(
+        persons=[CONTACT_URI],
+        same_as_pairs=[],
+        pref_id_pairs=[],
+        contacts_subjects=[CONTACT_URI],
+    )
+    result = compute_person_closures(session, CONTACTS_GRAPH)
+    assert len(result) == 1
+    primary, secondary, is_contact = result[0]
+    assert primary == CONTACT_URI
+    assert secondary == []
+    assert is_contact is True
+
+
+def test_compute_person_closures_no_contact_uri():
+    """Closure with no contacts URI → is_contact=False."""
+    session = _make_session_for_closures(
+        persons=[EOLAS_URI],
+        same_as_pairs=[],
+        pref_id_pairs=[],
+        contacts_subjects=[],  # no contacts subjects
+    )
+    result = compute_person_closures(session, CONTACTS_GRAPH)
+    assert len(result) == 1
+    _, _, is_contact = result[0]
+    assert is_contact is False
+
+
+def test_compute_person_closures_sameAs_treated_as_symmetric():
+    """Only A→B in triplestore — symmetric closure still groups them together."""
+    session = _make_session_for_closures(
+        persons=[CONTACT_URI, EOLAS_URI],
+        same_as_pairs=[(CONTACT_URI, EOLAS_URI)],  # only one direction stored
+        pref_id_pairs=[],
+        contacts_subjects=[CONTACT_URI],
+    )
+    result = compute_person_closures(session, CONTACTS_GRAPH)
+    assert len(result) == 1  # must be one merged closure, not two
+
+
+def test_compute_person_closures_two_separate_persons():
+    """Two unlinked Persons → two single-element closures."""
+    other_eolas = "https://eolas.l42.eu/metadata/person/bob/"
+    session = _make_session_for_closures(
+        persons=[CONTACT_URI, other_eolas],
+        same_as_pairs=[],  # no links
+        pref_id_pairs=[],
+        contacts_subjects=[CONTACT_URI],
+    )
+    result = compute_person_closures(session, CONTACTS_GRAPH)
+    assert len(result) == 2
+
+
+# ---------------------------------------------------------------------------
+# update_person_docs_in_searchindex — unit tests
+# ---------------------------------------------------------------------------
+
+def _make_full_session(persons, same_as_pairs, pref_id_pairs, contacts_subjects,
+                       type_label, cat_label, label_bindings):
+    """
+    Build a mock session for update_person_docs_in_searchindex, which calls:
+      1-4: compute_person_closures (4 queries)
+      5:   _query_person_type_category (1 query)
+      6:   _query_person_labels_batch (1 query)
+    """
+    session = MagicMock()
+    type_cat_binding = [_sparql_binding({"type_label": type_label, "cat_label": cat_label})]
+    responses = [
+        _make_sparql_response([_sparql_binding({"p": p}) for p in persons]),
+        _make_sparql_response([_sparql_binding({"a": a, "b": b}) for a, b in same_as_pairs]),
+        _make_sparql_response([_sparql_binding({"s": s, "o": o}) for s, o in pref_id_pairs]),
+        _make_sparql_response([_sparql_binding({"s": s}) for s in contacts_subjects]),
+        _make_sparql_response(type_cat_binding),
+        _make_sparql_response(label_bindings),
+    ]
+    session.post.side_effect = responses
+    return session
+
+
+def _run_update_person_docs(session, contacts_graph_uri=CONTACTS_GRAPH):
+    """
+    Helper: run update_person_docs_in_searchindex with typesense_client fully mocked.
+    Returns (upserted_docs_list, mock_typesense_client).
+    """
+    with patch.object(searchindex, "typesense_client") as mock_ts:
+        mock_ts.collections.__getitem__.return_value.documents.import_.return_value = [
+            {"success": True}
+        ]
+        result = update_person_docs_in_searchindex(session, contacts_graph_uri)
+    return result, mock_ts
+
+
+def test_update_person_docs_upserts_merged_doc():
+    """Two linked Persons → one merged doc upserted with correct fields."""
+    session = _make_full_session(
+        persons=[CONTACT_URI, EOLAS_URI],
+        same_as_pairs=[(CONTACT_URI, EOLAS_URI)],
+        pref_id_pairs=[(CONTACT_URI, EOLAS_URI)],
+        contacts_subjects=[CONTACT_URI],
+        type_label="Person",
+        cat_label="Biographical",
+        label_bindings=[
+            {"s": {"value": EOLAS_URI, "type": "uri"},
+             "pred": {"value": "http://www.w3.org/2004/02/skos/core#prefLabel", "type": "uri"},
+             "label": {"value": "Alice", "type": "literal"}},
+            {"s": {"value": CONTACT_URI, "type": "uri"},
+             "pred": {"value": "http://xmlns.com/foaf/0.1/name", "type": "uri"},
+             "label": {"value": "Alice Smith", "type": "literal"}},
+        ],
+    )
+    result, mock_ts = _run_update_person_docs(session)
+    docs_col = mock_ts.collections.__getitem__.return_value.documents
+    docs_col.import_.assert_called_once()
+    upserted_docs = docs_col.import_.call_args[0][0]
+    assert len(upserted_docs) == 1
+    doc = upserted_docs[0]
+    assert doc["id"] == EOLAS_URI
+    assert doc["type"] == "Person"
+    assert doc["category"] == "Biographical"
+    assert doc["pref_label"] == "Alice"
+    assert doc["secondary_uris"] == [CONTACT_URI]
+    assert doc["is_contact"] is True
+    assert EOLAS_URI in result
+
+
+def test_update_person_docs_deletes_secondary_uri():
+    """Secondary URI doc is deleted from the items collection."""
+    session = _make_full_session(
+        persons=[CONTACT_URI, EOLAS_URI],
+        same_as_pairs=[(CONTACT_URI, EOLAS_URI)],
+        pref_id_pairs=[(CONTACT_URI, EOLAS_URI)],
+        contacts_subjects=[CONTACT_URI],
+        type_label="Person",
+        cat_label="Biographical",
+        label_bindings=[
+            {"s": {"value": EOLAS_URI, "type": "uri"},
+             "pred": {"value": "http://www.w3.org/2004/02/skos/core#prefLabel", "type": "uri"},
+             "label": {"value": "Alice", "type": "literal"}},
+        ],
+    )
+    _, mock_ts = _run_update_person_docs(session)
+    docs_col = mock_ts.collections.__getitem__.return_value.documents
+    # documents[escaped_secondary_uri].delete() must have been called once
+    docs_col.__getitem__.return_value.delete.assert_called_once()
+
+
+def test_update_person_docs_secondary_uris_for_lazy_lookup():
+    """Merged doc has secondary_uris set so lazy lookup (id:=X || secondary_uris:=X) works."""
+    session = _make_full_session(
+        persons=[CONTACT_URI, EOLAS_URI],
+        same_as_pairs=[(CONTACT_URI, EOLAS_URI)],
+        pref_id_pairs=[(CONTACT_URI, EOLAS_URI)],
+        contacts_subjects=[CONTACT_URI],
+        type_label="Person",
+        cat_label="Biographical",
+        label_bindings=[
+            {"s": {"value": EOLAS_URI, "type": "uri"},
+             "pred": {"value": "http://www.w3.org/2004/02/skos/core#prefLabel", "type": "uri"},
+             "label": {"value": "Alice", "type": "literal"}},
+        ],
+    )
+    _, mock_ts = _run_update_person_docs(session)
+    docs_col = mock_ts.collections.__getitem__.return_value.documents
+    doc = docs_col.import_.call_args[0][0][0]
+    # secondary_uris must contain the contacts URI for secondary_uris:=CONTACT_URI filter
+    assert CONTACT_URI in doc["secondary_uris"]
+
+
+def test_update_person_docs_no_pref_id_fallback_to_foaf_name():
+    """When primary has no skos:prefLabel, fall back to any foaf:name in the closure."""
+    session = _make_full_session(
+        persons=[CONTACT_URI, EOLAS_URI],
+        same_as_pairs=[(CONTACT_URI, EOLAS_URI)],
+        pref_id_pairs=[(CONTACT_URI, EOLAS_URI)],
+        contacts_subjects=[CONTACT_URI],
+        type_label="Person",
+        cat_label="Biographical",
+        label_bindings=[
+            # No skos:prefLabel for EOLAS_URI — only foaf:name on CONTACT_URI
+            {"s": {"value": CONTACT_URI, "type": "uri"},
+             "pred": {"value": "http://xmlns.com/foaf/0.1/name", "type": "uri"},
+             "label": {"value": "Alice Smith", "type": "literal"}},
+        ],
+    )
+    _, mock_ts = _run_update_person_docs(session)
+    docs_col = mock_ts.collections.__getitem__.return_value.documents
+    doc = docs_col.import_.call_args[0][0][0]
+    assert doc["pref_label"] == "Alice Smith"
+
+
+def test_update_person_docs_is_contact_false_for_eolas_only():
+    """Closure with only an eolas URI (no contacts URI) has is_contact=False."""
+    session = _make_full_session(
+        persons=[EOLAS_URI],
+        same_as_pairs=[],
+        pref_id_pairs=[],
+        contacts_subjects=[],  # contacts graph has no Person subjects
+        type_label="Person",
+        cat_label="Biographical",
+        label_bindings=[
+            {"s": {"value": EOLAS_URI, "type": "uri"},
+             "pred": {"value": "http://www.w3.org/2004/02/skos/core#prefLabel", "type": "uri"},
+             "label": {"value": "Bob", "type": "literal"}},
+        ],
+    )
+    _, mock_ts = _run_update_person_docs(session)
+    docs_col = mock_ts.collections.__getitem__.return_value.documents
+    doc = docs_col.import_.call_args[0][0][0]
+    assert doc["is_contact"] is False

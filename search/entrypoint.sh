@@ -107,6 +107,29 @@ if echo "$ITEMS_COLLECTION_JSON" | grep -q '"name":"items"'; then
 			echo "  Field '${FIELD_NAME}' added."
 		fi
 	done
+	# Person-merge fields (secondary_uris for lazy lookup, is_contact for filtering)
+	if echo "$EXISTING_FIELDS" | grep -q "^secondary_uris$"; then
+		echo "  Field 'secondary_uris' already present."
+	else
+		echo "  Adding missing field 'secondary_uris'..."
+		curl -X PATCH "${TYPESENSE_URL}/collections/items" \
+			-H "X-TYPESENSE-API-KEY: ${TYPESENSE_ADMIN_KEY}" \
+			-H "Content-Type: application/json" \
+			-d '{"fields": [{"name": "secondary_uris", "type": "string[]", "optional": true}]}' \
+			--silent --show-error --fail-with-body
+		echo "  Field 'secondary_uris' added."
+	fi
+	if echo "$EXISTING_FIELDS" | grep -q "^is_contact$"; then
+		echo "  Field 'is_contact' already present."
+	else
+		echo "  Adding missing field 'is_contact'..."
+		curl -X PATCH "${TYPESENSE_URL}/collections/items" \
+			-H "X-TYPESENSE-API-KEY: ${TYPESENSE_ADMIN_KEY}" \
+			-H "Content-Type: application/json" \
+			-d '{"fields": [{"name": "is_contact", "type": "bool", "optional": true}]}' \
+			--silent --show-error --fail-with-body
+		echo "  Field 'is_contact' added."
+	fi
 else
 	echo "Creating 'items' collection..."
 	curl -X POST "${TYPESENSE_URL}/collections" \
@@ -123,7 +146,9 @@ else
 				{"name": "lyrics", "type": "string", "optional": true, "full_text_search": true},
 				{"name": "lang_family", "type": "string", "optional": true},
 				{"name": "contained_in", "type": "string", "optional": true},
-				{"name": "artist", "type": "string", "optional": true}
+				{"name": "artist", "type": "string", "optional": true},
+				{"name": "secondary_uris", "type": "string[]", "optional": true},
+				{"name": "is_contact", "type": "bool", "optional": true}
 			],
 			"default_sorting_field":"pref_label"
 		}' --silent --show-error --fail-with-body

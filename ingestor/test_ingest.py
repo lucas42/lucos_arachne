@@ -32,6 +32,7 @@ _replace_graph_mock = MagicMock()
 _diff_graph_mock = MagicMock(return_value=_DIFF_FRAGMENT_STUB)
 _execute_sparql_update_mock = MagicMock()
 _update_searchindex_mock = MagicMock(return_value=(set(), set()))
+_update_person_docs_mock = MagicMock(return_value=set())
 _cleanup_triplestore_mock = MagicMock()
 _cleanup_searchindex_mock = MagicMock()
 _compute_inferences_mock = MagicMock()
@@ -57,6 +58,7 @@ for mod_name, attrs in [
             "compute_inferences": _compute_inferences_mock,
             "get_source_hash": _get_source_hash_mock,
             "set_source_hash": _set_source_hash_mock,
+            "session": MagicMock(),  # triplestore_session imported by ingest.py
         },
     ),
     (
@@ -64,6 +66,7 @@ for mod_name, attrs in [
         {
             "update_searchindex": _update_searchindex_mock,
             "cleanup_searchindex": _cleanup_searchindex_mock,
+            "update_person_docs_in_searchindex": _update_person_docs_mock,
         },
     ),
     ("loganne", {"updateLoganne": _update_loganne_mock}),
@@ -85,7 +88,7 @@ for _mod_name in _stub_mod_names:
 def _reset_mocks():
     for m in [
         _fetch_url_mock, _replace_graph_mock, _diff_graph_mock,
-        _execute_sparql_update_mock, _update_searchindex_mock,
+        _execute_sparql_update_mock, _update_searchindex_mock, _update_person_docs_mock,
         _cleanup_triplestore_mock, _cleanup_searchindex_mock,
         _compute_inferences_mock, _get_source_hash_mock, _set_source_hash_mock,
         _update_loganne_mock, _update_schedule_tracker_mock,
@@ -93,6 +96,7 @@ def _reset_mocks():
         m.reset_mock(side_effect=True, return_value=True)
     _fetch_url_mock.return_value = (_CONTENT, _CONTENT_TYPE)
     _update_searchindex_mock.return_value = (set(), set())
+    _update_person_docs_mock.return_value = set()
     _get_source_hash_mock.return_value = None
     _diff_graph_mock.return_value = _DIFF_FRAGMENT_STUB
 

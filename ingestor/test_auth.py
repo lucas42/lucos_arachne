@@ -13,8 +13,10 @@ for mod_name in ("authorised_fetch", "triplestore", "searchindex"):
 	stub.replace_item_in_triplestore = None
 	stub.delete_item_in_triplestore = None
 	stub.merge_items_in_triplestore = None
+	stub.session = None  # server.py now imports session from triplestore
 	stub.update_searchindex = None
 	stub.delete_doc_in_searchindex = None
+	stub.update_person_docs_in_searchindex = None  # server.py now imports this from searchindex
 	sys.modules[mod_name] = stub
 
 os.environ.setdefault("PORT", "8080")

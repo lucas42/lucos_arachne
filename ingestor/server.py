@@ -3,8 +3,8 @@ import json, sys, os, traceback, threading
 from concurrent.futures import ThreadPoolExecutor
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from authorised_fetch import fetch_url
-from triplestore import live_systems, replace_item_in_triplestore, delete_item_in_triplestore, merge_items_in_triplestore
-from searchindex import update_searchindex, delete_doc_in_searchindex
+from triplestore import live_systems, replace_item_in_triplestore, delete_item_in_triplestore, merge_items_in_triplestore, session as triplestore_session
+from searchindex import update_searchindex, delete_doc_in_searchindex, update_person_docs_in_searchindex
 
 if not os.environ.get("PORT"):
 	sys.exit("\033[91mPORT not set\033[0m")
@@ -32,6 +32,11 @@ def _process_event(event):
 			(content, content_type) = fetch_url(event["source"], event["url"])
 			replace_item_in_triplestore(event["url"], live_systems[event["source"]], content, content_type)
 			update_searchindex(event["source"], content, content_type)
+			# Re-compute foaf:Person closures so that e.g. a contactLinked event whose
+			# new RDF includes owl:sameAs produces a merged doc and removes any
+			# previously-standalone eolas Person doc.
+			contacts_graph_uri = live_systems.get("lucos_contacts", "")
+			update_person_docs_in_searchindex(triplestore_session, contacts_graph_uri)
 		elif event_type.endswith("Deleted"):
 			delete_item_in_triplestore(event["url"], live_systems[event["source"]])
 			delete_doc_in_searchindex(event["source"], event["url"])
