@@ -46,6 +46,10 @@ def _process_event(event):
 			(content, content_type) = fetch_url(event["source"], event["targetUri"])
 			replace_item_in_triplestore(event["targetUri"], live_systems[event["source"]], content, content_type)
 			update_searchindex(event["source"], content, content_type)
+			# Re-compute Person closures — merging two contacts changes the sameAs
+			# topology and can leave stale sourceUri entries in secondary_uris.
+			contacts_graph_uri = live_systems.get("lucos_contacts", "")
+			update_person_docs_in_searchindex(triplestore_session, contacts_graph_uri)
 	except Exception:
 		traceback.print_exc()
 		_increment_failure()

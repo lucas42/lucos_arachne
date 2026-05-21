@@ -451,8 +451,9 @@ def test_deleted_event_does_not_trigger_person_merge():
     _update_person_docs_mock.assert_not_called()
 
 
-def test_merged_event_does_not_trigger_person_merge():
-    """Merge events do not call update_person_docs_in_searchindex."""
+def test_merged_event_triggers_person_merge():
+    """Merge events call update_person_docs_in_searchindex — the sameAs topology
+    changes when two contacts are merged, so secondary_uris must be recomputed."""
     _fetch_url_mock.return_value = ("<rdf/>", "application/rdf+xml")
     _make_request({
         "type": "contactMerged",
@@ -460,4 +461,4 @@ def test_merged_event_does_not_trigger_person_merge():
         "sourceUri": "https://contacts.l42.eu/people/old",
         "targetUri": "https://contacts.l42.eu/people/new",
     })
-    _update_person_docs_mock.assert_not_called()
+    _update_person_docs_mock.assert_called_once()

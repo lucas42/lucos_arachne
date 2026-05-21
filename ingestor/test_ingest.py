@@ -284,6 +284,27 @@ def test_phase1_failure_skips_inference():
 
 
 # ---------------------------------------------------------------------------
+# Person-merge step is called during bulk ingest
+# ---------------------------------------------------------------------------
+
+def test_person_merge_called_during_ingest():
+    """update_person_docs_in_searchindex is called once per successful ingest run."""
+    _reset_mocks()
+    _get_source_hash_mock.return_value = None
+    ingest.run_ingest()
+    _update_person_docs_mock.assert_called_once()
+
+
+def test_person_merge_still_called_when_no_sources_changed():
+    """update_person_docs_in_searchindex is called even when all sources are hash-identical.
+    Person topology can change via webhook events independently of bulk source data."""
+    _reset_mocks()
+    _get_source_hash_mock.return_value = _expected_hash(_CONTENT, _CONTENT_TYPE)
+    ingest.run_ingest()
+    _update_person_docs_mock.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
 # cleanup_triplestore allow-list includes METADATA_GRAPH
 # ---------------------------------------------------------------------------
 
