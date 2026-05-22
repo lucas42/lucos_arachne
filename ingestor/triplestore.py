@@ -112,6 +112,8 @@ METADATA_GRAPH = "urn:lucos:ingestor-metadata"
 LAST_PAYLOAD_HASH_PRED = "urn:lucos:ingestor:lastPayloadHash"
 OWL_TRANSITIVE = "http://www.w3.org/2002/07/owl#TransitiveProperty"
 OWL_INVERSE_OF  = "http://www.w3.org/2002/07/owl#inverseOf"
+OWL_SYMMETRIC   = "http://www.w3.org/2002/07/owl#SymmetricProperty"
+OWL_SAME_AS     = "http://www.w3.org/2002/07/owl#sameAs"
 
 def get_source_hash(graph_uri):
 	"""Return the stored SHA-256 hash for graph_uri, or None if not recorded."""
@@ -241,6 +243,44 @@ def compute_inferences():
 					inferred_lines.append(f"<{s}> <{dst_prop}> <{o}> .")
 	else:
 		print("No owl:inverseOf pairs found")
+
+	# ── Symmetric properties ──────────────────────────────────────────────────
+	resp = session.post(
+		"http://triplestore:3030/raw_arachne/sparql",
+		headers={"Accept": "application/json"},
+		data={"query": f"SELECT DISTINCT ?p WHERE {{ GRAPH ?g {{ ?p a <{OWL_SYMMETRIC}> }} }}"},
+	)
+	resp.raise_for_status()
+	symmetric_props = [b["p"]["value"] for b in resp.json()["results"]["bindings"]]
+
+	# owl:sameAs is symmetric by the OWL 2 RDF-Based Semantics spec; the cached
+	# W3C ontology file only declares it as rdf:Property, not owl:SymmetricProperty,
+	# so we always add it here — mirroring how compute_inferences() already
+	# hard-codes the meaning of TransitiveProperty and inverseOf in Python.
+	if OWL_SAME_AS not in symmetric_props:
+		symmetric_props.append(OWL_SAME_AS)
+
+	print(f"Symmetric properties ({len(symmetric_props)}): {', '.join('<' + p + '>' for p in symmetric_props)}")
+	for prop in symmetric_props:
+		# FILTER(!isLiteral(?o)) — literals cannot appear as RDF subjects, so
+		# materialising the reverse of a literal-object triple is a no-op.
+		resp = session.post(
+			"http://triplestore:3030/raw_arachne/sparql",
+			headers={"Accept": "application/json"},
+			data={"query": (
+				f"SELECT DISTINCT ?s ?o WHERE {{"
+				f" GRAPH ?g {{ ?s <{prop}> ?o }}"
+				f" FILTER(?g != <{INFERRED_GRAPH}>)"
+				f" FILTER(!isLiteral(?o))"
+				f" }}"
+			)},
+		)
+		resp.raise_for_status()
+		direct_pairs = {(b["s"]["value"], b["o"]["value"]) for b in resp.json()["results"]["bindings"]}
+		inferred_for_prop = [(o, s) for s, o in direct_pairs if (o, s) not in direct_pairs]
+		print(f"  <{prop}>: {len(direct_pairs)} direct → {len(inferred_for_prop)} inferred reverse(s)")
+		for s, o in inferred_for_prop:
+			inferred_lines.append(f"<{s}> <{prop}> <{o}> .")
 
 	# ── Write inferred graph ─────────────────────────────────────────────────
 	inferred_lines.sort()  # Deterministic ordering for stable hashing
