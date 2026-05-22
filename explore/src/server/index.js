@@ -225,10 +225,10 @@ app.get('/search', catchErrors(async (req, res) => {
 		headers: { 'X-TYPESENSE-API-KEY': process.env.KEY_LUCOS_ARACHNE },
 		signal: AbortSignal.timeout(900),
 	});
-	const data = await response.json();
 	if (!response.ok) {
-		throw new Error(`Recieved ${response.status} error from search endpoint: ${data["message"]}`);
+		throw new Error(`Received ${response.status} error from search endpoint: ${response.statusText}`);
 	}
+	const data = await response.json();
 	// Apply disambiguation: compute display labels only where label collisions exist.
 	data.hits = computeDisplayLabels(data.hits);
 	res.render('search', data);
@@ -252,10 +252,10 @@ async function sparqlFetch(query) {
 		signal: AbortSignal.timeout(2900),
 		body: requestBody.toString(),
 	});
-	const data = await response.json();
 	if (!response.ok) {
-		throw new Error(`Recieved ${response.status} error from sparql endpoint: ${data["message"]}`);
+		throw new Error(`Received ${response.status} error from sparql endpoint: ${response.statusText}`);
 	}
+	const data = await response.json();
 	return data.results.bindings;
 }
 
