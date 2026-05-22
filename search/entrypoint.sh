@@ -53,7 +53,7 @@ for SYSTEM_ENV in "${!DESIRED_KEYS[@]}"; do
 		ACTIONS='["*"]'
 	fi
 
-	PAYLOAD_JSON=$(jq -n --arg key "$KEY" --arg system_env "$SYSTEM_ENV" --argjson actions $ACTIONS '{value: $key, actions: $actions, collections: ["*"], description: $system_env}')
+	PAYLOAD_JSON=$(jq -n --arg key "$KEY" --arg system_env "$SYSTEM_ENV" --argjson actions "$ACTIONS" '{value: $key, actions: $actions, collections: ["*"], description: $system_env}')
 	if echo "$EXISTING_SYSTEMS" | grep -q "^${SYSTEM_ENV}$"; then
 		CURRENT_ACTIONS=$(echo "$EXISTING_KEYS_JSON" | jq -c ".keys[] | select(.description==\"$SYSTEM_ENV\") | .actions")
 		CURRENT_KEY_PREFIX=$(echo "$EXISTING_KEYS_JSON" | jq -c ".keys[] | select(.description==\"$SYSTEM_ENV\") | .value_prefix" -r )
