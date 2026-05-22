@@ -7,6 +7,7 @@ import { computeDisplayLabels } from './disambiguate.js';
 import { formatYearRange } from './formatYearRange.js';
 import { sortContainedIn } from './sortContainedIn.js';
 import { validateIri } from './validateIri.js';
+import { findPrimaryUri, shouldRedirectToPrimary, filterClosurePredicates } from './sameAsHelpers.js';
 
 const app = express();
 app.auth = authMiddleware;
@@ -312,6 +313,48 @@ async function expandSkolemInline(predicates) {
 	}
 }
 
+// Walk the owl:sameAs closure for a given URI.
+// Returns an array of all URI strings reachable via owl:sameAs* (including the
+// input URI itself).  Since #568 materialises owl:sameAs as symmetric, a
+// one-direction property-path traversal reaches all closure members.
+async function getSameAsClosure(uri) {
+	const bindings = await sparqlFetch(`
+		PREFIX owl: <http://www.w3.org/2002/07/owl#>
+		SELECT DISTINCT ?member WHERE {
+			<${uri}> owl:sameAs* ?member .
+		}
+	`);
+	return bindings.map(b => b.member.value);
+}
+
+// Fetch preferredIdentifier edges for a set of closure URIs.
+// Returns a Map<source, target> limited to edges where both ends are in the closure.
+async function getPrefIdPairs(closureUris) {
+	if (closureUris.length <= 1) return new Map();
+	const valuesClause = closureUris.map(u => `<${u}>`).join(' ');
+	const bindings = await sparqlFetch(`
+		PREFIX eolas: <https://eolas.l42.eu/ontology/>
+		SELECT ?subject ?target WHERE {
+			VALUES ?subject { ${valuesClause} }
+			VALUES ?target { ${valuesClause} }
+			?subject eolas:preferredIdentifier ?target .
+		}
+	`);
+	return new Map(bindings.map(b => [b.subject.value, b.target.value]));
+}
+
+// Fetch the skos:prefLabel for the primary URI, or null if none exists.
+async function getPrimaryPrefLabel(primaryUri) {
+	const bindings = await sparqlFetch(`
+		PREFIX skos: <http://www.w3.org/2004/02/skos/core#>
+		SELECT ?label WHERE {
+			<${primaryUri}> skos:prefLabel ?label .
+		}
+		LIMIT 1
+	`);
+	return bindings.length > 0 ? bindings[0].label.value : null;
+}
+
 app.get('/item', catchErrors(async (req, res) => {
 	const uri = req.query.uri;
 	if (!uri) {
@@ -320,12 +363,37 @@ app.get('/item', catchErrors(async (req, res) => {
 	}
 	validateIri(uri, 'uri');
 
+	// Walk the owl:sameAs closure and determine the canonical (primary) URI.
+	// Runs concurrently: closure walk first, then preferredIdentifier pairs once
+	// we know the full closure.
+	const closureUris = await getSameAsClosure(uri);
+	const prefIdPairs = await getPrefIdPairs(closureUris);
+	const primaryUri = findPrimaryUri(closureUris, prefIdPairs);
+
+	// Redirect secondary URIs to the canonical primary.
+	// This only fires when there ARE preferredIdentifier edges in the closure — if
+	// no edges exist there is no deterministic canonical URL and no redirect.
+	if (shouldRedirectToPrimary(uri, primaryUri, prefIdPairs, closureUris)) {
+		res.redirect(302, `/item?uri=${encodeURIComponent(primaryUri)}`);
+		return;
+	}
+
+	// Build the VALUES clause used in all SPARQL queries below.
+	// Single-URI closures produce VALUES ?subject { <uri> } which is equivalent
+	// to the previous BIND(<uri> AS ?subject) — no behaviour change for items
+	// that have no owl:sameAs links.
+	const closureValuesClause = closureUris.map(u => `<${u}>`).join(' ');
+
+	// Fetch the primary URI's prefLabel separately so we always use the canonical
+	// label as the page title even when merging data from multiple closure members.
+	const primaryPrefLabelPromise = getPrimaryPrefLabel(primaryUri);
+
 	// Phase A: per-predicate object counts and labels (one cheap GROUP BY query).
 	const phaseABindings = await sparqlFetch(`
 		PREFIX skos: <http://www.w3.org/2004/02/skos/core#>
 		PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
 		SELECT ?p ?pLabel ?pLabelRdfs (COUNT(?o) AS ?count) WHERE {
-			BIND(<${uri}> AS ?subject)
+			VALUES ?subject { ${closureValuesClause} }
 			?subject ?p ?o .
 			OPTIONAL { ?p skos:prefLabel ?pLabel }
 			OPTIONAL { ?p rdfs:label ?pLabelRdfs }
@@ -355,7 +423,7 @@ app.get('/item', catchErrors(async (req, res) => {
 			PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
 			SELECT ?predicate ?predicateLabel ?predicateLabelRdfs ?object ?objectLabel ?objectLabelRdfs WHERE {
 				VALUES ?predicate { ${valuesClause} }
-				BIND(<${uri}> AS ?subject)
+				VALUES ?subject { ${closureValuesClause} }
 				?subject ?predicate ?object .
 				OPTIONAL { ?predicate skos:prefLabel ?predicateLabel }
 				OPTIONAL { ?predicate rdfs:label ?predicateLabelRdfs }
@@ -365,7 +433,20 @@ app.get('/item', catchErrors(async (req, res) => {
 		`);
 	}
 
-	const { prefLabel, types, predicates, wikipediaLink } = processBindings(phaseBBindings);
+	const {
+		prefLabel: fallbackPrefLabel,
+		types,
+		predicates,
+		wikipediaLink,
+	} = processBindings(phaseBBindings);
+
+	// Prefer the primary URI's own skos:prefLabel as the page title; fall back
+	// to whatever processBindings extracted (which may come from any closure member).
+	const prefLabel = (await primaryPrefLabelPromise) ?? fallbackPrefLabel;
+
+	// Strip owl:sameAs and preferredIdentifier values that are only closure members
+	// — these are merge-plumbing, not facts about the entity worth showing.
+	filterClosurePredicates(predicates, closureUris);
 
 	// Annotate every small predicate with its total count (not truncated).
 	for (const predUri of Object.keys(predicates)) {
@@ -382,7 +463,7 @@ app.get('/item', catchErrors(async (req, res) => {
 				PREFIX skos: <http://www.w3.org/2004/02/skos/core#>
 				PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
 				SELECT ?object ?objectLabel ?objectLabelRdfs WHERE {
-					BIND(<${uri}> AS ?subject)
+					VALUES ?subject { ${closureValuesClause} }
 					?subject <${predUri}> ?object .
 					OPTIONAL { ?object skos:prefLabel ?objectLabel }
 					OPTIONAL { ?object rdfs:label ?objectLabelRdfs }
@@ -442,7 +523,7 @@ app.get('/item', catchErrors(async (req, res) => {
 		PREFIX eolas: <https://eolas.l42.eu/ontology/>
 		PREFIX skos: <http://www.w3.org/2004/02/skos/core#>
 		SELECT ?categoryLabel WHERE {
-			BIND(<${uri}> AS ?subject)
+			VALUES ?subject { ${closureValuesClause} }
 			?subject a ?type .
 			?type eolas:hasCategory ?category .
 			?category skos:prefLabel ?categoryLabel .
