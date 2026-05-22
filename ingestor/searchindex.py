@@ -485,11 +485,21 @@ def compute_person_closures(session, contacts_graph_uri: str) -> list:
 	return result
 
 
+def _is_english_or_untagged(binding_value: dict) -> bool:
+	"""Return True if a SPARQL JSON binding value is an untagged or English literal."""
+	lang = binding_value.get("xml:lang", "")
+	return lang == "" or lang == "en"
+
+
 def _query_person_type_category(session) -> tuple:
 	"""
 	Query the triplestore for the type label (rdfs:label of foaf:Person) and the
 	category label (via eolas:hasCategory).  Returns (type_label, category_label),
 	either of which may be None if not found.
+
+	SPARQL FILTERs restrict results to English or untagged literals.  Python-side
+	iteration provides defence-in-depth: if the triplestore returns a non-English
+	binding despite the FILTER, it is skipped.
 	"""
 	resp = session.post(
 		TRIPLESTORE_SPARQL_URL,
@@ -501,21 +511,26 @@ def _query_person_type_category(session) -> tuple:
 			f" }} UNION {{"
 			f"  GRAPH ?g {{ <{FOAF_PERSON}> <{SKOS.prefLabel}> ?type_label }}"
 			f" }}"
+			f" FILTER(LANG(?type_label) = \"\" || LANGMATCHES(LANG(?type_label), \"en\"))"
 			f" OPTIONAL {{"
 			f"  GRAPH ?g2 {{ <{FOAF_PERSON}> <{EOLAS_HAS_CATEGORY}> ?cat }}"
 			f"  GRAPH ?g3 {{ ?cat <{SKOS.prefLabel}> ?cat_label }}"
+			f"  FILTER(LANG(?cat_label) = \"\" || LANGMATCHES(LANG(?cat_label), \"en\"))"
 			f" }}"
-			f"}} LIMIT 1"
+			f"}}"
 		)},
 	)
 	resp.raise_for_status()
 	bindings = resp.json()["results"]["bindings"]
-	if not bindings:
-		return (None, None)
-	b = bindings[0]
-	type_label = b.get("type_label", {}).get("value")
-	cat_label = b.get("cat_label", {}).get("value")
-	return (type_label, cat_label)
+	for b in bindings:
+		type_val = b.get("type_label", {})
+		cat_val = b.get("cat_label", {})
+		if not _is_english_or_untagged(type_val):
+			continue
+		if cat_val and not _is_english_or_untagged(cat_val):
+			continue
+		return (type_val.get("value"), cat_val.get("value") if cat_val else None)
+	return (None, None)
 
 
 def _query_person_labels_batch(session, uris: set) -> dict:

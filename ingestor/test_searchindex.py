@@ -26,6 +26,7 @@ from searchindex import (
     _find_primary_uri,
     compute_person_closures,
     update_person_docs_in_searchindex,
+    _query_person_type_category,
 )
 
 MO = Namespace("http://purl.org/ontology/mo/")
@@ -979,3 +980,64 @@ def test_update_person_docs_is_contact_false_for_eolas_only():
     docs_col = mock_ts.collections.__getitem__.return_value.documents
     doc = docs_col.import_.call_args[0][0][0]
     assert doc["is_contact"] is False
+
+
+# --- _query_person_type_category language filtering ---
+
+def _literal_binding(value: str, lang: str | None = None) -> dict:
+    """Build a SPARQL JSON binding for a literal, with optional language tag."""
+    entry = {"type": "literal", "value": value}
+    if lang is not None:
+        entry["xml:lang"] = lang
+    return entry
+
+
+def test_query_person_type_category_returns_english_when_irish_comes_first():
+    """
+    Regression test for #569: when the triplestore returns Irish labels before
+    English ones, the function must skip the Irish bindings and return English.
+    """
+    session = MagicMock()
+    session.post.return_value = _make_sparql_response([
+        # Irish binding — must be skipped
+        {
+            "type_label": _literal_binding("Duine", "ga"),
+            "cat_label":  _literal_binding("Daoine", "ga"),
+        },
+        # English binding — must be returned
+        {
+            "type_label": _literal_binding("Person", "en"),
+            "cat_label":  _literal_binding("People", "en"),
+        },
+    ])
+    type_label, cat_label = _query_person_type_category(session)
+    assert type_label == "Person"
+    assert cat_label == "People"
+
+
+def test_query_person_type_category_returns_untagged_labels():
+    """Untagged literals (no xml:lang) must be accepted — they are language-neutral."""
+    session = MagicMock()
+    session.post.return_value = _make_sparql_response([
+        {
+            "type_label": _literal_binding("Person"),       # no lang tag
+            "cat_label":  _literal_binding("Biographical"), # no lang tag
+        },
+    ])
+    type_label, cat_label = _query_person_type_category(session)
+    assert type_label == "Person"
+    assert cat_label == "Biographical"
+
+
+def test_query_person_type_category_returns_none_when_only_non_english():
+    """If only non-English bindings remain after SPARQL (defence-in-depth), return (None, None)."""
+    session = MagicMock()
+    session.post.return_value = _make_sparql_response([
+        {
+            "type_label": _literal_binding("Duine", "ga"),
+            "cat_label":  _literal_binding("Daoine", "ga"),
+        },
+    ])
+    type_label, cat_label = _query_person_type_category(session)
+    assert type_label is None
+    assert cat_label is None
