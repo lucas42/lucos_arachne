@@ -533,7 +533,11 @@ app.get('/predicate-objects', catchErrors(async (req, res) => {
 app.use((error, req, res, next) => {
 	res.status(error.status || 500);
 	console.error(error.stack);
-	res.json({errorMessage: error.message});
+	if (req.accepts('html')) {
+		res.render('error', {message: error.message});
+	} else {
+		res.json({errorMessage: error.message});
+	}
 });
 
 // Wrapper for controller async functions which catches errors and sends them on to express' error handling
