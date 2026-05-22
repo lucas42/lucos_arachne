@@ -81,10 +81,10 @@ done
 # Delete stale keys
 for EXISTING_SYSTEM in $EXISTING_SYSTEMS; do
 	if [ -z "${DESIRED_KEYS[$EXISTING_SYSTEM]}" ]; then
-		KEY_ID=$(echo "$EXISTING_SYSTEMS_JSON" | jq -r ".keys[] | select(.description==\"$EXISTING_SYSTEM\") | .id")
+		KEY_ID=$(echo "$EXISTING_KEYS_JSON" | jq -r ".keys[] | select(.description==\"$EXISTING_SYSTEM\") | .id")
 		echo "Revoking stale key ($EXISTING_SYSTEM)"
 		curl -X DELETE "${TYPESENSE_URL}/keys/${KEY_ID}" \
-			-H "X-TYPESENSE-API-KEY: ${TYPESENSE_ADMIN_SYSTEM}" --silent --show-error --fail > /dev/null
+			-H "X-TYPESENSE-API-KEY: ${TYPESENSE_ADMIN_KEY}" --silent --show-error --fail > /dev/null
 	fi
 done
 
