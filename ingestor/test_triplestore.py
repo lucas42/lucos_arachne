@@ -544,3 +544,178 @@ def test_compute_inferences_returns_false_when_diff_is_none():
         result = triplestore.compute_inferences()
 
     assert result is False
+
+
+# ---------------------------------------------------------------------------
+# compute_inferences — symmetric property materialisation
+# ---------------------------------------------------------------------------
+
+# URIs used in symmetric-property tests
+_SYM_PROP = "https://example.com/prop/collaboratedWith"
+_URI_A    = "https://example.com/agent/alice"
+_URI_B    = "https://example.com/agent/bob"
+
+
+def _sym_prop_response(prop_uris):
+    """Mock SPARQL SELECT response listing symmetric property URIs."""
+    resp = MagicMock()
+    resp.ok = True
+    resp.raise_for_status = MagicMock()
+    resp.json.return_value = {"results": {"bindings": [{"p": {"value": p}} for p in prop_uris]}}
+    return resp
+
+
+def _pairs_response(pairs):
+    """Mock SPARQL SELECT response for (s, o) pairs."""
+    resp = MagicMock()
+    resp.ok = True
+    resp.raise_for_status = MagicMock()
+    resp.json.return_value = {
+        "results": {"bindings": [{"s": {"value": s}, "o": {"value": o}} for s, o in pairs]}
+    }
+    return resp
+
+
+def _side_effects_for_symmetric(sym_props, prop_pairs, sameAs_pairs=None):
+    """
+    Return the session.post side_effect list for compute_inferences() when
+    transitive and inverse passes find nothing, there is one declared symmetric
+    property (sym_props), and owl:sameAs has sameAs_pairs (default empty).
+
+    Call sequence inside compute_inferences():
+      [0] transitive props SELECT      → no bindings
+      [1] inverse prop pairs SELECT    → no bindings
+      [2] symmetric props SELECT       → sym_props list
+      [3..] pair queries per prop (declared props first, then OWL_SAME_AS if not declared)
+    """
+    if sameAs_pairs is None:
+        sameAs_pairs = []
+    responses = [
+        _no_bindings_response(),   # transitive props
+        _no_bindings_response(),   # inverse prop pairs
+        _sym_prop_response(sym_props),
+    ]
+    # pair query for each declared symmetric prop
+    for pairs in prop_pairs:
+        responses.append(_pairs_response(pairs))
+    # pair query for OWL_SAME_AS (always appended unless already declared)
+    if triplestore.OWL_SAME_AS not in sym_props:
+        responses.append(_pairs_response(sameAs_pairs))
+    return responses
+
+
+def test_compute_inferences_symmetric_property_generates_reverse_triple():
+    """
+    A declared symmetric property with pair (A, B) and no reverse results in the
+    inferred reverse triple <B> <prop> <A>.
+    """
+    side_effects = _side_effects_for_symmetric(
+        sym_props=[_SYM_PROP],
+        prop_pairs=[[(_URI_A, _URI_B)]],  # only A → B stored
+    )
+    captured = {}
+    with (
+        patch.object(triplestore.session, "post", side_effect=side_effects),
+        patch.object(triplestore, "get_source_hash", return_value="sha256:stale"),
+        patch.object(triplestore, "diff_graph_in_triplestore",
+                     side_effect=lambda g, content, ct: captured.update({"content": content}) or None),
+        patch.object(triplestore, "execute_sparql_update"),
+        patch.object(triplestore, "set_source_hash"),
+    ):
+        triplestore.compute_inferences()
+
+    content = captured["content"]
+    assert f"<{_URI_B}> <{_SYM_PROP}> <{_URI_A}>" in content
+    # The forward triple is NOT re-emitted (it's already in the source graph)
+    assert f"<{_URI_A}> <{_SYM_PROP}> <{_URI_B}>" not in content
+
+
+def test_compute_inferences_sameAs_always_treated_as_symmetric():
+    """
+    owl:sameAs pair (A, B) generates the reverse <B> owl:sameAs <A> even when
+    owl:sameAs is not declared as owl:SymmetricProperty in the ontologies.
+    """
+    side_effects = _side_effects_for_symmetric(
+        sym_props=[],  # no declared symmetric props
+        prop_pairs=[],
+        sameAs_pairs=[(_URI_A, _URI_B)],
+    )
+    captured = {}
+    with (
+        patch.object(triplestore.session, "post", side_effect=side_effects),
+        patch.object(triplestore, "get_source_hash", return_value="sha256:stale"),
+        patch.object(triplestore, "diff_graph_in_triplestore",
+                     side_effect=lambda g, content, ct: captured.update({"content": content}) or None),
+        patch.object(triplestore, "execute_sparql_update"),
+        patch.object(triplestore, "set_source_hash"),
+    ):
+        triplestore.compute_inferences()
+
+    content = captured["content"]
+    assert f"<{_URI_B}> <{triplestore.OWL_SAME_AS}> <{_URI_A}>" in content
+
+
+def test_compute_inferences_symmetric_idempotent():
+    """
+    When both (A, B) and (B, A) are already in the source graphs, no new reverse
+    triple is inferred (materialisation is idempotent).
+    """
+    side_effects = _side_effects_for_symmetric(
+        sym_props=[_SYM_PROP],
+        prop_pairs=[[(_URI_A, _URI_B), (_URI_B, _URI_A)]],  # both directions present
+    )
+    captured = {}
+    with (
+        patch.object(triplestore.session, "post", side_effect=side_effects),
+        patch.object(triplestore, "get_source_hash", return_value="sha256:stale"),
+        patch.object(triplestore, "diff_graph_in_triplestore",
+                     side_effect=lambda g, content, ct: captured.update({"content": content}) or None),
+        patch.object(triplestore, "execute_sparql_update"),
+        patch.object(triplestore, "set_source_hash"),
+    ):
+        triplestore.compute_inferences()
+
+    content = captured["content"]
+    # No inferred triples for _SYM_PROP (both directions were direct)
+    assert f"<{_SYM_PROP}>" not in content
+
+
+def test_compute_inferences_symmetric_skips_literals_via_filter():
+    """
+    The pair query for symmetric properties uses FILTER(!isLiteral(?o)) so that
+    literal-object triples are not fetched and cannot produce a reverse triple.
+    """
+    side_effects = _side_effects_for_symmetric(
+        sym_props=[_SYM_PROP],
+        prop_pairs=[[]],  # empty — simulates server honouring the literal filter
+    )
+    sparql_queries = []
+    original_post = triplestore.session.post
+
+    def capturing_post(*args, **kwargs):
+        query = (kwargs.get("data") or {}).get("query", "")
+        if query:
+            sparql_queries.append(query)
+        return side_effects.pop(0) if side_effects else _no_bindings_response()
+
+    with (
+        patch.object(triplestore.session, "post", side_effect=capturing_post),
+        patch.object(triplestore, "get_source_hash", return_value="sha256:stale"),
+        patch.object(triplestore, "diff_graph_in_triplestore", return_value=None),
+        patch.object(triplestore, "execute_sparql_update"),
+        patch.object(triplestore, "set_source_hash"),
+    ):
+        triplestore.compute_inferences()
+
+    # At least one query should contain the literal filter, targeting _SYM_PROP
+    sym_prop_queries = [q for q in sparql_queries if _SYM_PROP in q]
+    assert sym_prop_queries, f"No SPARQL query found for {_SYM_PROP}"
+    assert any("isLiteral" in q for q in sym_prop_queries), (
+        "Symmetric pair query does not use isLiteral filter"
+    )
+
+
+def test_compute_inferences_owl_symmetric_and_sameAs_constants_defined():
+    """OWL_SYMMETRIC and OWL_SAME_AS constants are defined with the correct URIs."""
+    assert triplestore.OWL_SYMMETRIC == "http://www.w3.org/2002/07/owl#SymmetricProperty"
+    assert triplestore.OWL_SAME_AS   == "http://www.w3.org/2002/07/owl#sameAs"

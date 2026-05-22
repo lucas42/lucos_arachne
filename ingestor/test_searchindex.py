@@ -798,11 +798,11 @@ def test_compute_person_closures_no_contact_uri():
     assert is_contact is False
 
 
-def test_compute_person_closures_sameAs_treated_as_symmetric():
-    """Only A→B in triplestore — symmetric closure still groups them together."""
+def test_compute_person_closures_sameAs_symmetric():
+    """Both A→B and B→A in triplestore (materialised by compute_inferences) → one closure."""
     session = _make_session_for_closures(
         persons=[CONTACT_URI, EOLAS_URI],
-        same_as_pairs=[(CONTACT_URI, EOLAS_URI)],  # only one direction stored
+        same_as_pairs=[(CONTACT_URI, EOLAS_URI), (EOLAS_URI, CONTACT_URI)],
         pref_id_pairs=[],
         contacts_subjects=[CONTACT_URI],
     )

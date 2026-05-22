@@ -403,7 +403,8 @@ def compute_person_closures(session, contacts_graph_uri: str) -> list:
 		return []
 
 	# 2. Get all owl:sameAs triples where the subject is a known Person.
-	# Treat as symmetric by adding both directions to the adjacency map below.
+	# Both directions are present in the triplestore via symmetric materialisation
+	# in compute_inferences(), so no manual symmetry handling is needed here.
 	resp = session.post(
 		TRIPLESTORE_SPARQL_URL,
 		headers={"Accept": "application/json"},
@@ -421,11 +422,10 @@ def compute_person_closures(session, contacts_graph_uri: str) -> list:
 		if b["b"]["value"] in all_persons  # both ends must be known Persons
 	]
 
-	# 3. Build symmetric adjacency map for BFS/DFS
+	# 3. Build adjacency map for BFS/DFS
 	adjacency = {p: set() for p in all_persons}
 	for a, b in same_as_pairs:
 		adjacency.setdefault(a, set()).add(b)
-		adjacency.setdefault(b, set()).add(a)
 
 	# 4. Compute connected components (closures) via BFS
 	visited = set()
