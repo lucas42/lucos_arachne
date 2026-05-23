@@ -76,6 +76,28 @@ export function shouldRedirectToPrimary(requestedUri, primaryUri, prefIdMap, clo
 }
 
 /**
+ * Build the ordered list of { uri, label } objects for the "View/Edit Item" links.
+ *
+ * - Single-URI closure: one entry with label "View/Edit Item".
+ * - Multi-URI closure: one entry per URI, primary first, others sorted alphabetically,
+ *   with label "View/Edit Item on {hostname}" for each.
+ *
+ * @param {string} primaryUri
+ * @param {string[]} closureUris
+ * @returns {{ uri: string, label: string }[]}
+ */
+export function buildClosureLinks(primaryUri, closureUris) {
+	const sorted = [primaryUri, ...closureUris.filter(u => u !== primaryUri).sort()];
+	if (sorted.length === 1) {
+		return [{ uri: sorted[0], label: 'View/Edit Item' }];
+	}
+	return sorted.map(u => ({
+		uri: u,
+		label: `View/Edit Item on ${new URL(u).hostname}`,
+	}));
+}
+
+/**
  * Strip owl:sameAs and preferredIdentifier values that are URIs of closure
  * members from the rendered predicates.  Removes the whole predicate entry if
  * no values remain after filtering.  Non-closure values (e.g. a DBpedia URI
