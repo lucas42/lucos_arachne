@@ -7,7 +7,7 @@ import { computeDisplayLabels } from './disambiguate.js';
 import { formatYearRange } from './formatYearRange.js';
 import { sortContainedIn } from './sortContainedIn.js';
 import { validateIri } from './validateIri.js';
-import { findPrimaryUri, shouldRedirectToPrimary, filterClosurePredicates } from './sameAsHelpers.js';
+import { findPrimaryUri, shouldRedirectToPrimary, filterClosurePredicates, buildClosureLinks } from './sameAsHelpers.js';
 
 const app = express();
 app.auth = authMiddleware;
@@ -533,6 +533,8 @@ app.get('/item', catchErrors(async (req, res) => {
 	`);
 	const category = categoryBindings.length > 0 ? categoryBindings[0].categoryLabel.value : null;
 
+	const closureLinks = buildClosureLinks(primaryUri, closureUris);
+
 	res.render('item', {
 		uri,
 		types,
@@ -540,6 +542,7 @@ app.get('/item', catchErrors(async (req, res) => {
 		predicates,
 		wikipediaLink,
 		category,
+		closureLinks,
 	});
 }));
 

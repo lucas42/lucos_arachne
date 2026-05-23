@@ -4,6 +4,7 @@ import {
 	findPrimaryUri,
 	shouldRedirectToPrimary,
 	filterClosurePredicates,
+	buildClosureLinks,
 	OWL_SAME_AS,
 	PREFERRED_IDENTIFIER,
 } from './sameAsHelpers.js';
@@ -169,6 +170,31 @@ test('filterClosurePredicates: no-op for single-URI closure', () => {
 	// Single-URI closure: no filtering of any values (nothing is a "closure member")
 	assert.ok(OWL_SAME_AS in predicates, 'single-URI closure: predicate kept as-is');
 	assert.equal(predicates[OWL_SAME_AS].values.length, 1);
+});
+
+// ─── buildClosureLinks ────────────────────────────────────────────────────────
+
+test('buildClosureLinks: single URI → plain "View/Edit Item" label', () => {
+	const result = buildClosureLinks('https://eolas.l42.eu/person/1', ['https://eolas.l42.eu/person/1']);
+	assert.deepEqual(result, [{ uri: 'https://eolas.l42.eu/person/1', label: 'View/Edit Item' }]);
+});
+
+test('buildClosureLinks: multiple URIs → primary first with hostname labels', () => {
+	const closureUris = ['https://contacts.l42.eu/person/1', 'https://eolas.l42.eu/person/1'];
+	const result = buildClosureLinks('https://eolas.l42.eu/person/1', closureUris);
+	assert.equal(result.length, 2);
+	assert.equal(result[0].uri, 'https://eolas.l42.eu/person/1');
+	assert.equal(result[0].label, 'View/Edit Item on eolas.l42.eu');
+	assert.equal(result[1].uri, 'https://contacts.l42.eu/person/1');
+	assert.equal(result[1].label, 'View/Edit Item on contacts.l42.eu');
+});
+
+test('buildClosureLinks: non-primary URIs are sorted alphabetically', () => {
+	const closureUris = ['https://z.example/x', 'https://a.example/x', 'https://primary.example/x'];
+	const result = buildClosureLinks('https://primary.example/x', closureUris);
+	assert.equal(result[0].uri, 'https://primary.example/x');
+	assert.equal(result[1].uri, 'https://a.example/x');
+	assert.equal(result[2].uri, 'https://z.example/x');
 });
 
 test('filterClosurePredicates: keeps literal values in owl:sameAs unchanged', () => {
