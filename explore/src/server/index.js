@@ -556,32 +556,43 @@ app.get('/predicate-objects', catchErrors(async (req, res) => {
 	validateIri(uri, 'uri');
 	validateIri(predicate, 'predicate');
 
+	// Walk the owl:sameAs closure and find the primary URI, exactly as the /item
+	// handler does, so that objects contributed by secondary closure members are
+	// included in both the count and the paged results.
+	const closureUris = await getSameAsClosure(uri);
+	const prefIdPairs = await getPrefIdPairs(closureUris);
+	const primaryUri = findPrimaryUri(closureUris, prefIdPairs);
+	const closureValuesClause = closureUris.map(u => `<${u}>`).join(' ');
+
 	const PAGE_SIZE = 50;
 	const page = Math.max(1, parseInt(req.query.page, 10) || 1);
 	const offset = (page - 1) * PAGE_SIZE;
 
-	// Run meta query (subject label, predicate label, total object count) and
-	// paged objects query in parallel.
-	const [metaBindings, pageBindings] = await Promise.all([
+	// Run three queries in parallel:
+	//   meta:  predicate label and total object count across the full closure
+	//   page:  paged objects from the full closure
+	//   label: primary URI's preferred label for the page heading
+	// Subject labels are fetched separately via getPrimaryPrefLabel rather than
+	// being included in the meta GROUP BY — mixing them in would split the count
+	// across label-groups when closure members carry different labels.
+	const [metaBindings, pageBindings, primaryPrefLabel] = await Promise.all([
 		sparqlFetch(`
 			PREFIX skos: <http://www.w3.org/2004/02/skos/core#>
 			PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
-			SELECT ?subjectLabel ?subjectLabelRdfs ?predicateLabel ?predicateLabelRdfs (COUNT(?o) AS ?count) WHERE {
-				BIND(<${uri}> AS ?subject)
+			SELECT ?predicateLabel ?predicateLabelRdfs (COUNT(?o) AS ?count) WHERE {
+				VALUES ?subject { ${closureValuesClause} }
 				BIND(<${predicate}> AS ?pred)
-				OPTIONAL { ?subject skos:prefLabel ?subjectLabel }
-				OPTIONAL { ?subject rdfs:label ?subjectLabelRdfs }
 				OPTIONAL { ?pred skos:prefLabel ?predicateLabel }
 				OPTIONAL { ?pred rdfs:label ?predicateLabelRdfs }
 				?subject ?pred ?o .
 			}
-			GROUP BY ?subjectLabel ?subjectLabelRdfs ?predicateLabel ?predicateLabelRdfs
+			GROUP BY ?predicateLabel ?predicateLabelRdfs
 		`),
 		sparqlFetch(`
 			PREFIX skos: <http://www.w3.org/2004/02/skos/core#>
 			PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
 			SELECT ?object ?objectLabel ?objectLabelRdfs WHERE {
-				BIND(<${uri}> AS ?subject)
+				VALUES ?subject { ${closureValuesClause} }
 				?subject <${predicate}> ?object .
 				OPTIONAL { ?object skos:prefLabel ?objectLabel }
 				OPTIONAL { ?object rdfs:label ?objectLabelRdfs }
@@ -589,9 +600,10 @@ app.get('/predicate-objects', catchErrors(async (req, res) => {
 			ORDER BY ASC(COALESCE(?objectLabel, ?objectLabelRdfs, ?object)) ASC(?object)
 			LIMIT ${PAGE_SIZE} OFFSET ${offset}
 		`),
+		getPrimaryPrefLabel(primaryUri),
 	]);
 
-	const subjectLabel = bestLabelAcrossRows(metaBindings, 'subjectLabel', 'subjectLabelRdfs') || uri;
+	const subjectLabel = primaryPrefLabel || uri;
 	const predicateLabel = bestLabelAcrossRows(metaBindings, 'predicateLabel', 'predicateLabelRdfs') || predicate;
 	const totalCount = metaBindings.length > 0
 		? Math.max(...metaBindings.map(r => parseInt(r.count.value, 10)))
