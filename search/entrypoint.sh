@@ -130,6 +130,18 @@ if echo "$ITEMS_COLLECTION_JSON" | grep -q '"name":"items"'; then
 			--silent --show-error --fail-with-body
 		echo "  Field 'is_contact' added."
 	fi
+	# types: multi-valued type hierarchy for subclass-aware filtering (ADR-0004)
+	if echo "$EXISTING_FIELDS" | grep -q "^types$"; then
+		echo "  Field 'types' already present."
+	else
+		echo "  Adding missing field 'types'..."
+		curl -X PATCH "${TYPESENSE_URL}/collections/items" \
+			-H "X-TYPESENSE-API-KEY: ${TYPESENSE_ADMIN_KEY}" \
+			-H "Content-Type: application/json" \
+			-d '{"fields": [{"name": "types", "type": "string[]", "facet": true, "optional": true}]}' \
+			--silent --show-error --fail-with-body
+		echo "  Field 'types' added."
+	fi
 else
 	echo "Creating 'items' collection..."
 	curl -X POST "${TYPESENSE_URL}/collections" \
@@ -148,7 +160,8 @@ else
 				{"name": "contained_in", "type": "string", "optional": true},
 				{"name": "artist", "type": "string", "optional": true},
 				{"name": "secondary_uris", "type": "string[]", "optional": true},
-				{"name": "is_contact", "type": "bool", "optional": true}
+				{"name": "is_contact", "type": "bool", "optional": true},
+				{"name": "types", "type": "string[]", "facet": true, "optional": true}
 			],
 			"default_sorting_field":"pref_label"
 		}' --silent --show-error --fail-with-body

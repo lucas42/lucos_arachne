@@ -17,7 +17,9 @@ The ingestor (`searchindex.py`) does **not** fall back to the triplestore when t
 
 **OWL/RDFS infrastructure types are excluded.** Any `rdf:type` in the OWL (`owl:`), RDFS (`rdfs:`), or RDF-syntax (`rdf:`) namespaces is classified as a meta-type by `is_meta_type()` in `searchindex.py` and silently skipped — it is never looked up in the source RDF and requires no source-side metadata. Source systems may freely use property characteristics such as `owl:ObjectProperty`, `owl:FunctionalProperty`, or `rdfs:Class` without supplying type metadata for them.
 
-See [#371](https://github.com/lucas42/lucos_arachne/issues/371) for the rationale.
+**Sources that emit `rdfs:subClassOf` triples must also emit `skos:prefLabel` for the parent class.** The ingestor walks `rdfs:subClassOf` chains (via `_collect_subclass_labels()`) to populate the `types[]` field in the search index. Every class encountered in that walk must have a `skos:prefLabel` in the source RDF — the same `get_label()` call is used, raising the same `ValueError` if the label is missing. `eolas:hasCategory` is **not** required on parent classes; `category` is derived from the leaf type only. (Added in ADR-0004 / [#585](https://github.com/lucas42/lucos_arachne/issues/585).)
+
+See [#371](https://github.com/lucas42/lucos_arachne/issues/371) for the original rationale; [ADR-0004](docs/adr/0004-subclass-aware-filtering.md) for the subclass extension.
 
 ## Label Resolution Convention
 
