@@ -675,6 +675,7 @@ def update_person_docs_in_searchindex(session, contacts_graph_uri: str) -> set:
 		doc = {
 			"id": primary,
 			"type": type_label,
+			"types": [type_label],
 			"category": category_label,
 			"pref_label": pref_label,
 			"labels": all_names,

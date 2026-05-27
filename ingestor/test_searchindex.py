@@ -1087,6 +1087,33 @@ def test_update_person_docs_upserts_merged_doc():
     assert EOLAS_URI in result
 
 
+def test_update_person_docs_types_field_populated():
+    """Upserted Person doc must include types=[type_label] (regression for #587).
+
+    The regular update_searchindex() path populates types[] via _collect_subclass_labels().
+    update_person_docs_in_searchindex() is a separate code path that must populate
+    types[] itself.  Person is a leaf type with no rdfs:subClassOf chain, so the
+    correct value is [type_label].
+    """
+    session = _make_full_session(
+        persons=[CONTACT_URI, EOLAS_URI],
+        same_as_pairs=[(CONTACT_URI, EOLAS_URI)],
+        pref_id_pairs=[(CONTACT_URI, EOLAS_URI)],
+        contacts_subjects=[CONTACT_URI],
+        type_label="Person",
+        cat_label="Biographical",
+        label_bindings=[
+            {"s": {"value": EOLAS_URI, "type": "uri"},
+             "pred": {"value": "http://www.w3.org/2004/02/skos/core#prefLabel", "type": "uri"},
+             "label": {"value": "Alice", "type": "literal"}},
+        ],
+    )
+    _, mock_ts = _run_update_person_docs(session)
+    docs_col = mock_ts.collections.__getitem__.return_value.documents
+    doc = docs_col.import_.call_args[0][0][0]
+    assert doc["types"] == ["Person"]
+
+
 def test_update_person_docs_deletes_secondary_uri():
     """Secondary URI doc is deleted from the items collection."""
     session = _make_full_session(
