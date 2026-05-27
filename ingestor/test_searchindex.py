@@ -24,6 +24,7 @@ from searchindex import (
     get_category,
     is_meta_type,
     _find_primary_uri,
+    _collect_subclass_labels,
     compute_person_closures,
     update_person_docs_in_searchindex,
     _query_person_type_category,
@@ -533,6 +534,9 @@ def test_is_meta_type_rdf_uri():
 def test_is_meta_type_eolas_category():
     assert is_meta_type("https://eolas.l42.eu/ontology/Category") is True
 
+def test_is_meta_type_eolas_language_family():
+    assert is_meta_type("https://eolas.l42.eu/ontology/LanguageFamily") is True
+
 def test_is_meta_type_domain_uri_not_matched():
     assert is_meta_type("http://purl.org/ontology/mo/Track") is False
 
@@ -619,6 +623,193 @@ def test_graph_to_typesense_docs_skips_foaf_person():
     g.add((contact_uri, FOAF.name, Literal("Alice")))
     docs = graph_to_typesense_docs(g)
     assert docs == []
+
+
+# ---------------------------------------------------------------------------
+# _collect_subclass_labels — pure-function unit tests
+# ---------------------------------------------------------------------------
+
+def test_collect_subclass_labels_no_subclass():
+    """A type with no rdfs:subClassOf triple returns an empty list."""
+    g = Graph()
+    type_uri = URIRef("https://eolas.l42.eu/metadata/creativeworktype/1/")
+    g.add((type_uri, SKOS.prefLabel, Literal("Film")))
+    labels = _collect_subclass_labels(g, type_uri)
+    assert labels == []
+
+
+def test_collect_subclass_labels_single_level():
+    """Single-level chain: Film → Creative Work."""
+    g = Graph()
+    SDO = Namespace("https://schema.org/")
+    film_uri = URIRef("https://eolas.l42.eu/metadata/creativeworktype/1/")
+    g.add((film_uri, SKOS.prefLabel, Literal("Film")))
+    g.add((film_uri, RDFS.subClassOf, SDO.CreativeWork))
+    g.add((SDO.CreativeWork, SKOS.prefLabel, Literal("Creative Work")))
+    labels = _collect_subclass_labels(g, film_uri)
+    assert labels == ["Creative Work"]
+
+
+def test_collect_subclass_labels_two_level_chain():
+    """Two-level chain: ChildType → MidTier → Creative Work."""
+    g = Graph()
+    SDO = Namespace("https://schema.org/")
+    child_uri = URIRef("https://eolas.l42.eu/metadata/creativeworktype/2/")
+    mid_uri = URIRef("https://example.com/MidTier")
+    g.add((child_uri, SKOS.prefLabel, Literal("Child Type")))
+    g.add((child_uri, RDFS.subClassOf, mid_uri))
+    g.add((mid_uri, SKOS.prefLabel, Literal("Mid Tier")))
+    g.add((mid_uri, RDFS.subClassOf, SDO.CreativeWork))
+    g.add((SDO.CreativeWork, SKOS.prefLabel, Literal("Creative Work")))
+    labels = _collect_subclass_labels(g, child_uri)
+    assert labels == ["Mid Tier", "Creative Work"]
+
+
+def test_collect_subclass_labels_stops_at_meta_type():
+    """Walk stops when it reaches a meta-type (OWL/RDFS/RDF-syntax namespaces)."""
+    from rdflib.namespace import OWL as OWL_NS
+    g = Graph()
+    SDO = Namespace("https://schema.org/")
+    type_uri = URIRef("https://eolas.l42.eu/metadata/creativeworktype/3/")
+    g.add((type_uri, SKOS.prefLabel, Literal("Film")))
+    g.add((type_uri, RDFS.subClassOf, SDO.CreativeWork))
+    g.add((SDO.CreativeWork, SKOS.prefLabel, Literal("Creative Work")))
+    # Chain continues to owl:Thing — must be stopped
+    g.add((SDO.CreativeWork, RDFS.subClassOf, OWL_NS.Thing))
+    labels = _collect_subclass_labels(g, type_uri)
+    assert labels == ["Creative Work"]
+    assert "Thing" not in labels
+
+
+def test_collect_subclass_labels_shared_ancestor_deduplication():
+    """Multiple subClassOf parents sharing a common ancestor: ancestor label appears once."""
+    g = Graph()
+    SDO = Namespace("https://schema.org/")
+    type_uri = URIRef("https://example.com/SpecialType")
+    parent_a = URIRef("https://example.com/ParentA")
+    parent_b = URIRef("https://example.com/ParentB")
+    shared = SDO.CreativeWork
+    g.add((type_uri, SKOS.prefLabel, Literal("Special Type")))
+    g.add((type_uri, RDFS.subClassOf, parent_a))
+    g.add((type_uri, RDFS.subClassOf, parent_b))
+    g.add((parent_a, SKOS.prefLabel, Literal("Parent A")))
+    g.add((parent_a, RDFS.subClassOf, shared))
+    g.add((parent_b, SKOS.prefLabel, Literal("Parent B")))
+    g.add((parent_b, RDFS.subClassOf, shared))
+    g.add((shared, SKOS.prefLabel, Literal("Creative Work")))
+    labels = _collect_subclass_labels(g, type_uri)
+    assert labels.count("Creative Work") == 1  # deduplicated
+    assert "Parent A" in labels
+    assert "Parent B" in labels
+
+
+def test_collect_subclass_labels_raises_on_missing_label():
+    """Ancestor with no prefLabel raises ValueError pointing at the source."""
+    g = Graph()
+    SDO = Namespace("https://schema.org/")
+    type_uri = URIRef("https://eolas.l42.eu/metadata/creativeworktype/4/")
+    g.add((type_uri, SKOS.prefLabel, Literal("Film")))
+    g.add((type_uri, RDFS.subClassOf, SDO.CreativeWork))
+    # SDO.CreativeWork has no prefLabel in the graph
+    try:
+        _collect_subclass_labels(g, type_uri)
+        assert False, "Expected ValueError"
+    except ValueError as e:
+        msg = str(e)
+        assert "https://schema.org/CreativeWork" in msg
+        assert "source" in msg.lower()
+
+
+# ---------------------------------------------------------------------------
+# graph_to_typesense_docs — types[] field population
+# ---------------------------------------------------------------------------
+
+def _make_item_graph_with_subclass(subj_uri, type_uri, type_label, parent_uri, parent_label, pref_label):
+    """Build a graph with a subject whose type has one rdfs:subClassOf parent."""
+    g = Graph()
+    subj = URIRef(subj_uri)
+    type_u = URIRef(type_uri)
+    parent_u = URIRef(parent_uri)
+    cat_uri = URIRef("https://eolas.l42.eu/ontology/Dramaturgical")
+    g.add((subj, RDF.type, type_u))
+    g.add((subj, SKOS.prefLabel, Literal(pref_label)))
+    g.add((type_u, SKOS.prefLabel, Literal(type_label)))
+    g.add((type_u, EOLAS_NS.hasCategory, cat_uri))
+    g.add((cat_uri, SKOS.prefLabel, Literal("Dramaturgical")))
+    g.add((type_u, RDFS.subClassOf, parent_u))
+    g.add((parent_u, SKOS.prefLabel, Literal(parent_label)))
+    return g
+
+
+def test_graph_to_typesense_docs_types_includes_leaf_and_parent():
+    """Single-level chain Film → Creative Work: types contains both labels."""
+    SDO = Namespace("https://schema.org/")
+    g = _make_item_graph_with_subclass(
+        "https://eolas.l42.eu/metadata/creativework/casablanca/",
+        "https://eolas.l42.eu/metadata/creativeworktype/film/",
+        "Film",
+        str(SDO.CreativeWork),
+        "Creative Work",
+        "Casablanca",
+    )
+    docs = graph_to_typesense_docs(g)
+    casablanca = next(d for d in docs if d["pref_label"] == "Casablanca")
+    assert casablanca["type"] == "Film"
+    assert casablanca["types"] == ["Film", "Creative Work"]
+
+
+def test_graph_to_typesense_docs_types_two_level_chain():
+    """Two-level chain: types contains leaf, mid-tier, and top ancestor."""
+    mid_uri = "https://example.com/MidTier"
+    top_uri = "https://schema.org/CreativeWork"
+    g = Graph()
+    subj = URIRef("https://eolas.l42.eu/metadata/creativework/test/")
+    type_u = URIRef("https://eolas.l42.eu/metadata/creativeworktype/sub/")
+    mid_u = URIRef(mid_uri)
+    top_u = URIRef(top_uri)
+    cat_uri = URIRef("https://eolas.l42.eu/ontology/Dramaturgical")
+    g.add((subj, RDF.type, type_u))
+    g.add((subj, SKOS.prefLabel, Literal("Test Work")))
+    g.add((type_u, SKOS.prefLabel, Literal("Sub Type")))
+    g.add((type_u, EOLAS_NS.hasCategory, cat_uri))
+    g.add((cat_uri, SKOS.prefLabel, Literal("Dramaturgical")))
+    g.add((type_u, RDFS.subClassOf, mid_u))
+    g.add((mid_u, SKOS.prefLabel, Literal("Mid Tier")))
+    g.add((mid_u, RDFS.subClassOf, top_u))
+    g.add((top_u, SKOS.prefLabel, Literal("Creative Work")))
+    docs = graph_to_typesense_docs(g)
+    assert len(docs) == 1
+    assert docs[0]["types"] == ["Sub Type", "Mid Tier", "Creative Work"]
+
+
+def test_graph_to_typesense_docs_types_leaf_only_when_no_subclass():
+    """Subject with no rdfs:subClassOf on its type: types == [type]."""
+    g = _make_item_graph(
+        "https://eolas.l42.eu/metadata/vehicle/mallard/",
+        "https://eolas.l42.eu/metadata/transportmode/train/",
+        "Train",
+        "Mallard",
+    )
+    docs = graph_to_typesense_docs(g)
+    mallard = next(d for d in docs if d["pref_label"] == "Mallard")
+    assert mallard["type"] == "Train"
+    assert mallard["types"] == ["Train"]
+
+
+def test_graph_to_typesense_docs_types_language_family_single_element():
+    """LanguageFamily special-case: types == ['Language'], no further walk."""
+    g = Graph()
+    lang_uri = URIRef("https://eolas.l42.eu/metadata/language/fr/")
+    family_uri = URIRef("http://id.loc.gov/vocabulary/iso639-5/roa")
+    g.add((lang_uri, RDF.type, family_uri))
+    g.add((lang_uri, SKOS.prefLabel, Literal("French")))
+    g.add((family_uri, RDF.type, EOLAS_NS.LanguageFamily))
+    g.add((family_uri, SKOS.prefLabel, Literal("Romance languages")))
+    docs = graph_to_typesense_docs(g)
+    assert len(docs) == 1
+    doc = docs[0]
+    assert doc["type"] == "Language"
+    assert doc["types"] == ["Language"]
 
 
 # ---------------------------------------------------------------------------

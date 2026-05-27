@@ -33,7 +33,10 @@ META_NAMESPACES = (
 
 def is_meta_type(uri: str) -> bool:
 	"""Return True if the given type URI should be excluded from search indexing."""
-	return uri.startswith(META_NAMESPACES) or uri == "https://eolas.l42.eu/ontology/Category"
+	return uri.startswith(META_NAMESPACES) or uri in (
+		"https://eolas.l42.eu/ontology/Category",
+		"https://eolas.l42.eu/ontology/LanguageFamily",  # ontological meta-class, not a domain content type
+	)
 
 KEY_LUCOS_ARACHNE = os.environ.get("KEY_LUCOS_ARACHNE")
 
@@ -74,6 +77,29 @@ def get_category(graph, type):
 		f"See lucas42/lucos_arachne#371."
 	)
 
+def _collect_subclass_labels(graph: Graph, start_uri) -> list:
+	"""
+	BFS-walk rdfs:subClassOf from start_uri in the local graph, collecting the
+	prefLabel of each ancestor class (excluding meta-types). Returns a
+	deduplicated list of labels in BFS order. Raises ValueError (via get_label)
+	if any ancestor class lacks a prefLabel in the local graph.
+	"""
+	labels = []
+	seen = set()
+	queue = list(graph.objects(start_uri, RDFS.subClassOf))
+	while queue:
+		ancestor = queue.pop(0)
+		uri_str = str(ancestor)
+		if is_meta_type(uri_str) or uri_str in seen:
+			continue
+		seen.add(uri_str)
+		label = get_label(graph, ancestor)
+		if label not in labels:
+			labels.append(label)
+		queue.extend(graph.objects(ancestor, RDFS.subClassOf))
+	return labels
+
+
 def graph_to_typesense_docs(graph: Graph):
 	"""
 	Convert an RDFLib Graph into a list of documents
@@ -100,17 +126,21 @@ def graph_to_typesense_docs(graph: Graph):
 		}
 
 		# type
+		type_uri = None          # the rdf:type URI used (for subClassOf walk)
+		is_language_special_case = False
 		for o in graph.objects(subj, RDF.type):
 			if is_meta_type(str(o)):
 				continue
-			
+
 			# If the type itself has a type of LanguageFamily, then the subject is a Language
 			if (o, RDF.type, EOLAS_NS.LanguageFamily) in graph:
 				doc["type"] = "Language"
 				doc["category"] = "Anthropological"
 				doc["lang_family"] = str(o).split('/')[-1]
+				is_language_special_case = True
 			else:
 				doc["type"] = get_label(graph, o)
+				type_uri = o
 				# Prefer subject-level eolas:hasCategory (e.g. PlaceType instances like Country
 				# carry their own per-instance category directly on the subject URI).  Fall back
 				# to type-level (e.g. Vehicle subjects inherit category from their TransportMode
@@ -121,6 +151,15 @@ def graph_to_typesense_docs(graph: Graph):
 				else:
 					doc["category"] = get_category(graph, o)
 			break
+
+		# types: leaf label + deduplicated ancestor labels via rdfs:subClassOf walk.
+		# LanguageFamily special case: no subClassOf walk — types is just ["Language"].
+		if doc["type"]:
+			if is_language_special_case:
+				doc["types"] = [doc["type"]]
+			else:
+				ancestor_labels = _collect_subclass_labels(graph, type_uri) if type_uri is not None else []
+				doc["types"] = [doc["type"]] + [l for l in ancestor_labels if l != doc["type"]]
 
 		# pref_label
 		for o in graph.objects(subj, SKOS.prefLabel):
