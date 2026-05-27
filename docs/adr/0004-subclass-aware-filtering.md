@@ -109,9 +109,13 @@ Three implementation phases, ordered by data dependency. Each ships as a separat
 
 **Phase 2 — `lucos_arachne`.** Two changes in the same PR:
 - `search/entrypoint.sh`: add `{"name": "types", "type": "string[]", "facet": true, "optional": true}` to the `items` collection's existing missing-field PATCH loop. Additive; Typesense accepts as a schema upgrade with no data migration.
-- `ingestor/searchindex.py`: in `graph_to_typesense_docs`, for each non-meta-type `rdf:type` of the subject, walk `rdfs:subClassOf` recursively in the local graph, collecting the prefLabel of each ancestor via `get_label()`. Stop at meta-types (the existing `is_meta_type` filter applies during the walk too). Populate `doc["types"]` with the deduplicated list. Keep `doc["type"]` populated exactly as today (the leaf for display).
+- `ingestor/searchindex.py`: in `graph_to_typesense_docs`, **populate `doc["types"]` starting from the already-computed `doc["type"]` value** (i.e. after any existing special-case processing such as the LanguageFamily rewrite). Then:
+  - **If the leaf came from the standard `get_label(graph, o)` path** (i.e. the subject's `rdf:type` was used as a class URI), walk `rdfs:subClassOf` recursively from that `o` in the local graph, collecting the prefLabel of each ancestor via `get_label()`. Stop at meta-types (the existing `is_meta_type` filter applies during the walk too). Append the deduplicated ancestor labels to `doc["types"]`.
+  - **If the leaf came from a special case** (e.g. `doc["type"] = "Language"` for LanguageFamily-typed subjects), `doc["types"]` is just `[doc["type"]]` — a single-element list with no further walk. Special cases are leaf labels with no class-hierarchy semantics, so there is nothing to expand. This preserves the existing contract that `data-types="Language"` matches all Language subjects, including ones whose underlying `rdf:type` is a specific LanguageFamily instance (e.g. `<…/iso639-5/cel>`).
 
-Tests in `test_searchindex.py` need new cases: a single-level chain (Film → CreativeWork), a two-level chain to verify recursion, a chain that bottoms out at a meta-type, a subject with multiple immediate types whose ancestor chains share an ancestor (deduplication), and a subject with `rdfs:subClassOf` pointing to a class that lacks a prefLabel (the `ValueError` path).
+  Keep `doc["type"]` populated exactly as today (the leaf for display).
+
+Tests in `test_searchindex.py` need new cases: a single-level chain (Film → CreativeWork), a two-level chain to verify recursion, a chain that bottoms out at a meta-type, a subject with multiple immediate types whose ancestor chains share an ancestor (deduplication), a subject with `rdfs:subClassOf` pointing to a class that lacks a prefLabel (the `ValueError` path), and a LanguageFamily-typed subject (verifies `doc["types"] == ["Language"]` regardless of which family the rdf:type belongs to).
 
 Also update `lucos_arachne/CLAUDE.md` "RDF Source Convention" section to include the parent-class label requirement.
 
