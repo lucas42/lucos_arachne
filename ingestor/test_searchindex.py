@@ -519,6 +519,36 @@ def test_graph_to_typesense_docs_artist_absent_when_no_foaf_maker():
 
 
 # ---------------------------------------------------------------------------
+# graph_to_typesense_docs — origin field (lucos_arachne#595)
+# ---------------------------------------------------------------------------
+
+def test_graph_to_typesense_docs_origin_eolas():
+    """origin is the scheme+host of the entity URI (eolas entities)."""
+    g = _make_item_graph(
+        "https://eolas.l42.eu/metadata/language/en/",
+        "https://eolas.l42.eu/metadata/languagetype/",
+        "Language",
+        "English",
+    )
+    docs = graph_to_typesense_docs(g)
+    assert len(docs) == 1
+    assert docs[0]["origin"] == "https://eolas.l42.eu"
+
+
+def test_graph_to_typesense_docs_origin_media_metadata():
+    """origin reflects the host for non-eolas entities (e.g. media-metadata Albums)."""
+    g = _make_item_graph(
+        "https://media-metadata.l42.eu/albums/42",
+        "https://media-metadata.l42.eu/albumtype/",
+        "Album",
+        "Abbey Road",
+    )
+    docs = graph_to_typesense_docs(g)
+    assert len(docs) == 1
+    assert docs[0]["origin"] == "https://media-metadata.l42.eu"
+
+
+# ---------------------------------------------------------------------------
 # is_meta_type — unit tests for the namespace-based filter
 # ---------------------------------------------------------------------------
 

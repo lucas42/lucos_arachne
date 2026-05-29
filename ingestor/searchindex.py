@@ -125,6 +125,8 @@ def graph_to_typesense_docs(graph: Graph):
 			"lyrics": None,
 			"lang_family": None,
 		}
+		_parsed = urllib.parse.urlparse(doc["id"])
+		doc["origin"] = f"{_parsed.scheme}://{_parsed.netloc}" if _parsed.netloc else None
 
 		# type
 		type_uri = None          # the rdf:type URI used (for subClassOf walk)
@@ -673,6 +675,7 @@ def update_person_docs_in_searchindex(session, contacts_graph_uri: str) -> set:
 				if name not in all_names:
 					all_names.append(name)
 
+		_parsed_primary = urllib.parse.urlparse(primary)
 		doc = {
 			"id": primary,
 			"type": type_label,
@@ -682,6 +685,7 @@ def update_person_docs_in_searchindex(session, contacts_graph_uri: str) -> set:
 			"labels": all_names,
 			"secondary_uris": secondary,
 			"is_contact": is_contact,
+			"origin": f"{_parsed_primary.scheme}://{_parsed_primary.netloc}" if _parsed_primary.netloc else None,
 		}
 		docs_to_upsert.append(doc)
 		primary_ids.add(primary)
