@@ -519,6 +519,36 @@ def test_graph_to_typesense_docs_artist_absent_when_no_foaf_maker():
 
 
 # ---------------------------------------------------------------------------
+# graph_to_typesense_docs — origin field (lucos_arachne#595)
+# ---------------------------------------------------------------------------
+
+def test_graph_to_typesense_docs_origin_eolas():
+    """origin is the scheme+host of the entity URI (eolas entities)."""
+    g = _make_item_graph(
+        "https://eolas.l42.eu/metadata/language/en/",
+        "https://eolas.l42.eu/metadata/languagetype/",
+        "Language",
+        "English",
+    )
+    docs = graph_to_typesense_docs(g)
+    assert len(docs) == 1
+    assert docs[0]["origin"] == "https://eolas.l42.eu"
+
+
+def test_graph_to_typesense_docs_origin_media_metadata():
+    """origin reflects the host for non-eolas entities (e.g. media-metadata Albums)."""
+    g = _make_item_graph(
+        "https://media-metadata.l42.eu/albums/42",
+        "https://media-metadata.l42.eu/albumtype/",
+        "Album",
+        "Abbey Road",
+    )
+    docs = graph_to_typesense_docs(g)
+    assert len(docs) == 1
+    assert docs[0]["origin"] == "https://media-metadata.l42.eu"
+
+
+# ---------------------------------------------------------------------------
 # is_meta_type — unit tests for the namespace-based filter
 # ---------------------------------------------------------------------------
 
@@ -1168,6 +1198,32 @@ def test_update_person_docs_types_field_populated():
     docs_col = mock_ts.collections.__getitem__.return_value.documents
     doc = docs_col.import_.call_args[0][0][0]
     assert doc["types"] == ["Person"]
+
+
+def test_update_person_docs_origin_field():
+    """Upserted Person doc must include origin=scheme://host derived from the primary URI.
+
+    update_person_docs_in_searchindex() builds its own doc dict separately from
+    graph_to_typesense_docs(), so origin must be populated there too.
+    """
+    session = _make_full_session(
+        persons=[CONTACT_URI, EOLAS_URI],
+        same_as_pairs=[(CONTACT_URI, EOLAS_URI)],
+        pref_id_pairs=[(CONTACT_URI, EOLAS_URI)],
+        contacts_subjects=[CONTACT_URI],
+        type_label="Person",
+        cat_label="Biographical",
+        label_bindings=[
+            {"s": {"value": EOLAS_URI, "type": "uri"},
+             "pred": {"value": "http://www.w3.org/2004/02/skos/core#prefLabel", "type": "uri"},
+             "label": {"value": "Alice", "type": "literal"}},
+        ],
+    )
+    _, mock_ts = _run_update_person_docs(session)
+    docs_col = mock_ts.collections.__getitem__.return_value.documents
+    doc = docs_col.import_.call_args[0][0][0]
+    # Primary URI is EOLAS_URI ("https://eolas.l42.eu/metadata/person/alice/")
+    assert doc["origin"] == "https://eolas.l42.eu"
 
 
 def test_update_person_docs_deletes_secondary_uri():
