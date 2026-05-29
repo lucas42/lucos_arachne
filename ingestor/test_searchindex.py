@@ -537,6 +537,12 @@ def test_is_meta_type_eolas_category():
 def test_is_meta_type_eolas_language_family():
     assert is_meta_type("https://eolas.l42.eu/ontology/LanguageFamily") is True
 
+def test_is_meta_type_skos_concept():
+    assert is_meta_type("http://www.w3.org/2004/02/skos/core#Concept") is True
+
+def test_is_meta_type_skos_concept_scheme():
+    assert is_meta_type("http://www.w3.org/2004/02/skos/core#ConceptScheme") is True
+
 def test_is_meta_type_domain_uri_not_matched():
     assert is_meta_type("http://purl.org/ontology/mo/Track") is False
 
@@ -613,6 +619,56 @@ def test_graph_to_typesense_docs_domain_type_not_filtered():
     assert len(docs) == 1
     assert docs[0]["pref_label"] == "Ada Lovelace"
     assert docs[0]["type"] == "Person"
+
+
+# ---------------------------------------------------------------------------
+# graph_to_typesense_docs — SKOS namespace filtered as infrastructure (#591)
+# ---------------------------------------------------------------------------
+
+def test_graph_to_typesense_docs_skips_skos_concept():
+    """skos:Concept subjects (media SKOS vocab concepts) are filtered as infrastructure.
+
+    This is the incident shape from lucas42/lucos_media_metadata_api#271: after
+    lucos_media_metadata_api#258 migrated provenance/availability/singalong/dance to
+    SKOS concept schemes, the media RDF export emits ~44 skos:Concept subjects.
+    Without the SKOS namespace in META_NAMESPACES the doc-builder called get_label()
+    on the skos:Concept *type*, which raised because the type has no eolas:hasCategory.
+    """
+    g = Graph()
+    subj = URIRef("https://media-api.l42.eu/vocab/provenance/bandcamp")
+    g.add((subj, RDF.type, SKOS.Concept))
+    g.add((subj, SKOS.prefLabel, Literal("Bandcamp", lang="en")))
+    g.add((subj, SKOS.notation, Literal("bandcamp")))
+    docs = graph_to_typesense_docs(g)
+    assert docs == []
+
+
+def test_graph_to_typesense_docs_skips_skos_concept_scheme():
+    """skos:ConceptScheme subjects are filtered as infrastructure."""
+    g = Graph()
+    subj = URIRef("https://media-api.l42.eu/ontology#provenanceScheme")
+    g.add((subj, RDF.type, SKOS.ConceptScheme))
+    g.add((subj, SKOS.prefLabel, Literal("Provenance Scheme", lang="en")))
+    docs = graph_to_typesense_docs(g)
+    assert docs == []
+
+
+def test_graph_to_typesense_docs_mo_track_not_filtered_by_skos_addition():
+    """mo:Track subjects are still indexed after the SKOS namespace addition.
+
+    A mo:Track carries a skos:prefLabel for its title, so it's important the
+    SKOS namespace filter targets the rdf:type URI, not the predicate namespace.
+    """
+    g = _make_item_graph(
+        "https://media-metadata.l42.eu/tracks/1",
+        str(MO.Track),
+        "Track",
+        "Bohemian Rhapsody",
+    )
+    docs = graph_to_typesense_docs(g)
+    assert len(docs) == 1
+    assert docs[0]["pref_label"] == "Bohemian Rhapsody"
+    assert docs[0]["type"] == "Track"
 
 
 def test_graph_to_typesense_docs_skips_foaf_person():
