@@ -953,6 +953,8 @@ PREFERRED_ID_URI = "https://eolas.l42.eu/ontology/preferredIdentifier"
 
 CONTACT_URI = "https://contacts.l42.eu/people/1"
 EOLAS_URI = "https://eolas.l42.eu/metadata/person/alice/"
+# Representative mo:MusicArtist URI (media-metadata host, as emitted by media_api)
+ARTIST_URI = "https://media-metadata.l42.eu/artists/229"
 
 
 def _make_sparql_response(bindings: list) -> MagicMock:
@@ -973,8 +975,8 @@ def _make_session_for_closures(persons, same_as_pairs, pref_id_pairs, contacts_s
     Build a mock session whose .post() side_effect returns canned SPARQL responses
     for compute_person_closures' four queries (in order):
       1. All foaf:Person URIs
-      2. owl:sameAs pairs between Persons
-      3. preferredIdentifier pairs between Persons
+      2. owl:sameAs pairs (foaf:Person OR mo:MusicArtist subjects)
+      3. preferredIdentifier pairs (foaf:Person OR mo:MusicArtist subjects)
       4. Subjects in the contacts graph
     """
     session = MagicMock()
@@ -1099,6 +1101,108 @@ def test_compute_person_closures_two_separate_persons():
     )
     result = compute_person_closures(session, CONTACTS_GRAPH)
     assert len(result) == 2
+
+
+# ---------------------------------------------------------------------------
+# compute_person_closures — mo:MusicArtist (ADR-0009) tests
+# ---------------------------------------------------------------------------
+
+def test_compute_person_closures_artist_linked_to_person():
+    """Artist owl:sameAs Person → one closure, artist as secondary."""
+    session = _make_session_for_closures(
+        persons=[EOLAS_URI],
+        same_as_pairs=[(ARTIST_URI, EOLAS_URI)],  # Artist → Person
+        pref_id_pairs=[(ARTIST_URI, EOLAS_URI)],  # Artist prefers eolas Person
+        contacts_subjects=[],
+    )
+    result = compute_person_closures(session, CONTACTS_GRAPH)
+    assert len(result) == 1
+    primary, secondary, is_contact = result[0]
+    assert primary == EOLAS_URI, "eolas Person URI must be primary via preferredIdentifier"
+    assert secondary == [ARTIST_URI]
+    assert is_contact is False
+
+
+def test_compute_person_closures_artist_lexicographic_fallback():
+    """Artist sameAs Person with no preferredIdentifier → lex fallback.
+    'eolas.l42.eu' < 'media-metadata.l42.eu' alphabetically, so eolas wins."""
+    session = _make_session_for_closures(
+        persons=[EOLAS_URI],
+        same_as_pairs=[(ARTIST_URI, EOLAS_URI)],
+        pref_id_pairs=[],
+        contacts_subjects=[],
+    )
+    result = compute_person_closures(session, CONTACTS_GRAPH)
+    assert len(result) == 1
+    primary, secondary, _ = result[0]
+    # Lexicographic fallback: eolas.l42.eu < media-metadata.l42.eu
+    assert primary == min(EOLAS_URI, ARTIST_URI)
+    assert len(secondary) == 1
+
+
+def test_compute_person_closures_standalone_artist_excluded():
+    """A mo:MusicArtist with NO owl:sameAs link must NOT appear in any closure.
+    Standalone artists flow through graph_to_typesense_docs instead."""
+    # Only persons and no same_as_pairs containing the artist → artist not in all_agents
+    session = _make_session_for_closures(
+        persons=[EOLAS_URI],
+        same_as_pairs=[],  # no links at all
+        pref_id_pairs=[],
+        contacts_subjects=[],
+    )
+    result = compute_person_closures(session, CONTACTS_GRAPH)
+    assert len(result) == 1  # only the Person closure
+    primary, secondary, _ = result[0]
+    assert primary == EOLAS_URI
+    assert secondary == []
+    # Artist URI must not appear anywhere
+    all_uris_in_closures = {primary} | set(secondary)
+    assert ARTIST_URI not in all_uris_in_closures
+
+
+def test_compute_person_closures_artist_and_separate_person_two_closures():
+    """Artist linked to one Person; another unlinked Person → two closures."""
+    other_person = "https://eolas.l42.eu/metadata/person/bob/"
+    session = _make_session_for_closures(
+        persons=[EOLAS_URI, other_person],
+        same_as_pairs=[(ARTIST_URI, EOLAS_URI)],
+        pref_id_pairs=[(ARTIST_URI, EOLAS_URI)],
+        contacts_subjects=[],
+    )
+    result = compute_person_closures(session, CONTACTS_GRAPH)
+    assert len(result) == 2
+    # One closure has 2 members (artist + person), the other is just other_person
+    sizes = sorted(1 + len(secondary) for _, secondary, _ in result)
+    assert sizes == [1, 2], "Expected one 2-member closure and one 1-member closure"
+
+
+def test_compute_person_closures_r3_bowie():
+    """R3 build-time invariant (ADR-0009): a known dual-role human (David Bowie, confirmed
+    live by SRE on 2026-05-31) with both a mo:MusicArtist URI and a foaf:Person URI,
+    linked by owl:sameAs + eolas:preferredIdentifier, must yield exactly ONE merged
+    closure — not two — with the eolas Person URI as primary and the media artist URI
+    as secondary."""
+    bowie_artist_uri = "https://media-metadata.l42.eu/artists/229"
+    bowie_person_uri = "https://eolas.l42.eu/metadata/person/241/"
+    session = _make_session_for_closures(
+        persons=[bowie_person_uri],
+        same_as_pairs=[(bowie_artist_uri, bowie_person_uri)],
+        pref_id_pairs=[(bowie_artist_uri, bowie_person_uri)],
+        contacts_subjects=[],
+    )
+    result = compute_person_closures(session, CONTACTS_GRAPH)
+    assert len(result) == 1, (
+        "R3 violated: dual-role human must yield exactly one merged closure, not two. "
+        "Got: " + str(result)
+    )
+    primary, secondary, is_contact = result[0]
+    assert primary == bowie_person_uri, (
+        "R3 violated: eolas Person URI must be the canonical primary (via preferredIdentifier)"
+    )
+    assert secondary == [bowie_artist_uri], (
+        "R3 violated: media artist URI must be a secondary in the merged closure"
+    )
+    assert is_contact is False
 
 
 # ---------------------------------------------------------------------------
@@ -1310,6 +1414,45 @@ def test_update_person_docs_is_contact_false_for_eolas_only():
     docs_col = mock_ts.collections.__getitem__.return_value.documents
     doc = docs_col.import_.call_args[0][0][0]
     assert doc["is_contact"] is False
+
+
+def test_update_person_docs_artist_person_merge():
+    """ADR-0009: Artist linked to Person → merged doc uses eolas Person URI as primary,
+    artist URI is a secondary, and the artist's standalone doc is deleted."""
+    session = _make_full_session(
+        persons=[EOLAS_URI],
+        same_as_pairs=[(ARTIST_URI, EOLAS_URI)],
+        pref_id_pairs=[(ARTIST_URI, EOLAS_URI)],
+        contacts_subjects=[],
+        type_label="Person",
+        cat_label="Biographical",
+        label_bindings=[
+            {"s": {"value": EOLAS_URI, "type": "uri"},
+             "pred": {"value": "http://www.w3.org/2004/02/skos/core#prefLabel", "type": "uri"},
+             "label": {"value": "David Bowie", "type": "literal"}},
+            {"s": {"value": ARTIST_URI, "type": "uri"},
+             "pred": {"value": "http://www.w3.org/2000/01/rdf-schema#label", "type": "uri"},
+             "label": {"value": "David Bowie", "type": "literal"}},
+        ],
+    )
+    result, mock_ts = _run_update_person_docs(session)
+    docs_col = mock_ts.collections.__getitem__.return_value.documents
+
+    # One merged doc upserted with eolas Person URI as id
+    docs_col.import_.assert_called_once()
+    upserted_docs = docs_col.import_.call_args[0][0]
+    assert len(upserted_docs) == 1
+    doc = upserted_docs[0]
+    assert doc["id"] == EOLAS_URI, "Merged doc must use eolas Person URI (canonical via preferredIdentifier)"
+    assert doc["secondary_uris"] == [ARTIST_URI], "Artist URI must be a secondary"
+    assert doc["type"] == "Person"
+    assert doc["pref_label"] == "David Bowie"
+
+    # Artist URI standalone doc must have been deleted
+    docs_col.__getitem__.return_value.delete.assert_called_once()
+
+    # Primary (eolas Person URI) must be returned for cleanup tracking
+    assert EOLAS_URI in result
 
 
 # --- _query_person_type_category language filtering ---

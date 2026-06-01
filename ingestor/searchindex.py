@@ -17,6 +17,7 @@ FOAF_PERSON = str(FOAF.Person)              # http://xmlns.com/foaf/0.1/Person
 OWL_SAME_AS = str(OWL.sameAs)              # http://www.w3.org/2002/07/owl#sameAs
 PREFERRED_IDENTIFIER = f"{EOLAS_NS}preferredIdentifier"
 EOLAS_HAS_CATEGORY = f"{EOLAS_NS}hasCategory"
+MO_MUSIC_ARTIST = str(MO.MusicArtist)      # http://purl.org/ontology/mo/MusicArtist
 # Triplestore SPARQL endpoint (raw_arachne supports GRAPH-clause queries across all named graphs)
 TRIPLESTORE_SPARQL_URL = "http://triplestore:3030/raw_arachne/sparql"
 
@@ -423,15 +424,20 @@ def _find_primary_uri(uris: set, pref_id_pairs: dict) -> str:
 
 def compute_person_closures(session, contacts_graph_uri: str) -> list:
 	"""
-	Query the triplestore for all foaf:Person URIs and owl:sameAs links between
-	them, compute symmetric transitive closures (connected components), and for
-	each closure determine:
+	Query the triplestore for all foaf:Person and linked mo:MusicArtist URIs, compute
+	symmetric transitive owl:sameAs closures (connected components), and for each
+	closure determine:
 	  - the primary URI (via preferredIdentifier walk, or lexicographic fallback)
 	  - the secondary URIs (rest of the closure)
 	  - whether any URI in the closure is from lucos_contacts (is_contact)
 
 	Returns a list of (primary_uri, secondary_uris_sorted_list, is_contact) tuples.
 	Single-URI Persons (no sameAs links) are included as single-element closures.
+
+	mo:MusicArtist URIs are included when they have at least one owl:sameAs link to a
+	known foaf:Person (e.g. a solo artist who is also an eolas Person via ADR-0009).
+	Standalone Artists (no sameAs link) are NOT included — they flow through the
+	generic graph_to_typesense_docs path instead.
 	"""
 	# 1. Get all foaf:Person URIs across all named graphs
 	resp = session.post(
@@ -444,16 +450,21 @@ def compute_person_closures(session, contacts_graph_uri: str) -> list:
 	if not all_persons:
 		return []
 
-	# 2. Get all owl:sameAs triples where the subject is a known Person.
-	# Both directions are present in the triplestore via symmetric materialisation
-	# in compute_inferences(), so no manual symmetry handling is needed here.
+	# 2. Get all owl:sameAs triples where the subject is a foaf:Person OR a
+	# mo:MusicArtist (ADR-0009 identity link: media Artist owl:sameAs eolas Person).
+	# For Person↔Person links: both symmetric directions are present in the triplestore
+	# via compute_inferences(), so no manual symmetry handling is needed.
+	# For Artist→Person links: only the artist-as-subject direction passes the
+	# b ∈ all_persons filter; the symmetric Person-as-subject direction is filtered
+	# out.  Reverse edges are added explicitly when building the adjacency map below.
 	resp = session.post(
 		TRIPLESTORE_SPARQL_URL,
 		headers={"Accept": "application/json"},
 		data={"query": (
 			f"SELECT DISTINCT ?a ?b WHERE {{"
 			f" GRAPH ?g {{ ?a <{OWL_SAME_AS}> ?b }}"
-			f" GRAPH ?g2 {{ ?a a <{FOAF_PERSON}> }}"
+			f" {{ GRAPH ?g2 {{ ?a a <{FOAF_PERSON}> }} }}"
+			f" UNION {{ GRAPH ?g3 {{ ?a a <{MO_MUSIC_ARTIST}> }} }}"
 			f"}}"
 		)},
 	)
@@ -461,22 +472,32 @@ def compute_person_closures(session, contacts_graph_uri: str) -> list:
 	same_as_pairs = [
 		(b["a"]["value"], b["b"]["value"])
 		for b in resp.json()["results"]["bindings"]
-		if b["b"]["value"] in all_persons  # both ends must be known Persons
+		if b["b"]["value"] in all_persons  # target must be a known Person
 	]
 
-	# 3. Build adjacency map for BFS/DFS
-	adjacency = {p: set() for p in all_persons}
+	# Derive the set of MusicArtist URIs that participate in at least one Person
+	# closure (i.e. have an explicit owl:sameAs to a known Person).  Standalone
+	# Artists with no link stay out of this step and flow through the generic path.
+	all_agents = {a for a, _b in same_as_pairs if a not in all_persons}
+	all_merge_uris = all_persons | all_agents
+
+	# 3. Build adjacency map for BFS (bidirectional edges).
+	# For Artist→Person pairs only one direction comes back from SPARQL (see above),
+	# so we add the reverse edge explicitly to ensure the BFS can reach the artist
+	# when starting from the Person side.
+	adjacency = {u: set() for u in all_merge_uris}
 	for a, b in same_as_pairs:
 		adjacency.setdefault(a, set()).add(b)
+		adjacency.setdefault(b, set()).add(a)  # explicit reverse for Artist→Person pairs
 
 	# 4. Compute connected components (closures) via BFS
 	visited = set()
 	closures = []
-	for person in sorted(all_persons):
-		if person in visited:
+	for uri in sorted(all_merge_uris):
+		if uri in visited:
 			continue
 		component = set()
-		queue = [person]
+		queue = [uri]
 		while queue:
 			node = queue.pop()
 			if node in component:
@@ -488,14 +509,16 @@ def compute_person_closures(session, contacts_graph_uri: str) -> list:
 		visited |= component
 		closures.append(component)
 
-	# 5. Get all preferredIdentifier edges (filtered to known Persons on both ends)
+	# 5. Get all preferredIdentifier edges from foaf:Person OR mo:MusicArtist subjects
+	# (filtered to known merge URIs on both ends).
 	resp = session.post(
 		TRIPLESTORE_SPARQL_URL,
 		headers={"Accept": "application/json"},
 		data={"query": (
 			f"SELECT DISTINCT ?s ?o WHERE {{"
 			f" GRAPH ?g {{ ?s <{PREFERRED_IDENTIFIER}> ?o }}"
-			f" GRAPH ?g2 {{ ?s a <{FOAF_PERSON}> }}"
+			f" {{ GRAPH ?g2 {{ ?s a <{FOAF_PERSON}> }} }}"
+			f" UNION {{ GRAPH ?g3 {{ ?s a <{MO_MUSIC_ARTIST}> }} }}"
 			f"}}"
 		)},
 	)
@@ -503,7 +526,7 @@ def compute_person_closures(session, contacts_graph_uri: str) -> list:
 	pref_id_pairs = {}
 	for b in resp.json()["results"]["bindings"]:
 		s, o = b["s"]["value"], b["o"]["value"]
-		if s in all_persons and o in all_persons:
+		if s in all_merge_uris and o in all_merge_uris:
 			pref_id_pairs[s] = o
 
 	# 6. Get all subjects in the contacts source graph (to determine is_contact)
