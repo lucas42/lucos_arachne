@@ -161,7 +161,8 @@ def run_ingest():
 		human_readable = "Knowledge graph updated"
 	else:
 		human_readable = "Knowledge graph checked — no changes"
-	updateLoganne(type="knowledgeIngest", humanReadable=human_readable, url=BASE_URL)
+	level = "notable" if has_failures else "routine"
+	updateLoganne(type="knowledgeIngest", humanReadable=human_readable, level=level, url=BASE_URL)
 	updateScheduleTracker(success=True, system="lucos_arachne", job_name="ingestor")
 
 

@@ -360,44 +360,48 @@ def test_ontology_uses_replace_graph_not_diff():
 # ---------------------------------------------------------------------------
 
 def test_loganne_message_no_changes():
-    """When nothing changed, loganne reports a no-op check."""
+    """When nothing changed, loganne reports a no-op check at routine level."""
     _reset_mocks()
     _get_source_hash_mock.return_value = _expected_hash(_CONTENT, _CONTENT_TYPE)
     ingest.run_ingest()
     _update_loganne_mock.assert_called_once()
-    human_readable = _update_loganne_mock.call_args.kwargs["humanReadable"]
-    assert human_readable == "Knowledge graph checked — no changes"
+    kwargs = _update_loganne_mock.call_args.kwargs
+    assert kwargs["humanReadable"] == "Knowledge graph checked — no changes"
+    assert kwargs["level"] == "routine"
 
 
 def test_loganne_message_updated():
-    """When sources changed without failures, loganne reports an update."""
+    """When sources changed without failures, loganne reports an update at routine level."""
     _reset_mocks()
     _get_source_hash_mock.return_value = None
     ingest.run_ingest()
     _update_loganne_mock.assert_called_once()
-    human_readable = _update_loganne_mock.call_args.kwargs["humanReadable"]
-    assert human_readable == "Knowledge graph updated"
+    kwargs = _update_loganne_mock.call_args.kwargs
+    assert kwargs["humanReadable"] == "Knowledge graph updated"
+    assert kwargs["level"] == "routine"
 
 
 def test_loganne_message_failed_no_changes():
-    """When fetch fails and nothing changed, loganne reports a total failure."""
+    """When fetch fails and nothing changed, loganne reports a total failure at notable level."""
     _reset_mocks()
     _fetch_url_mock.side_effect = Exception("network error")
     ingest.run_ingest()
     _update_loganne_mock.assert_called_once()
-    human_readable = _update_loganne_mock.call_args.kwargs["humanReadable"]
-    assert human_readable == "Knowledge graph ingest failed — no updates applied"
+    kwargs = _update_loganne_mock.call_args.kwargs
+    assert kwargs["humanReadable"] == "Knowledge graph ingest failed — no updates applied"
+    assert kwargs["level"] == "notable"
 
 
 def test_loganne_message_partial_failure():
-    """When some sources changed but post-ingest fails, loganne reports a partial update."""
+    """When some sources changed but post-ingest fails, loganne reports a partial update at notable level."""
     _reset_mocks()
     _get_source_hash_mock.return_value = None
     _update_searchindex_mock.side_effect = Exception("search index down")
     ingest.run_ingest()
     _update_loganne_mock.assert_called_once()
-    human_readable = _update_loganne_mock.call_args.kwargs["humanReadable"]
-    assert human_readable == "Knowledge graph partially updated — some sources failed"
+    kwargs = _update_loganne_mock.call_args.kwargs
+    assert kwargs["humanReadable"] == "Knowledge graph partially updated — some sources failed"
+    assert kwargs["level"] == "notable"
 
 
 # ---------------------------------------------------------------------------

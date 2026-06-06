@@ -29,7 +29,7 @@ def run_compaction():
 	)
 	resp.raise_for_status()
 	print("Compaction complete.", flush=True)
-	updateLoganne(type="tripleStoreCompaction", humanReadable="TDB2 triplestore compacted", url=BASE_URL)
+	updateLoganne(type="tripleStoreCompaction", humanReadable="TDB2 triplestore compacted", level="routine", url=BASE_URL)
 	updateScheduleTracker(success=True, system="lucos_arachne", job_name="compaction", frequency=FREQUENCY_SECONDS)
 
 
