@@ -6,6 +6,9 @@ from unittest.mock import MagicMock, patch
 
 os.environ.setdefault("APP_ORIGIN", "https://arachne.example.com")
 os.environ.setdefault("KEY_LUCOS_ARACHNE", "test-key")
+# Required by the real loganne client (imported in the real-transport test below)
+os.environ.setdefault("SYSTEM", "lucos_arachne")
+os.environ.setdefault("LOGANNE_ENDPOINT", "http://stub-loganne/events")
 
 _update_loganne_mock = MagicMock()
 _update_schedule_tracker_mock = MagicMock()
@@ -147,3 +150,46 @@ def test_compaction_main_reports_failure_to_schedule_tracker():
     assert kwargs.get("system") == "lucos_arachne"
     assert kwargs.get("job_name") == "compaction"
     assert kwargs.get("frequency") == compact.FREQUENCY_SECONDS
+
+
+# ---------------------------------------------------------------------------
+# Real-transport loganne test
+# ---------------------------------------------------------------------------
+
+def test_compaction_loganne_real_transport():
+    """Drive the real loganne v2 client against a patched HTTP session.
+
+    compact.py was imported with a stub loganne — this test temporarily
+    replaces compact.updateLoganne with the real function, then patches
+    loganne.session.post to capture the HTTP payload without making a real
+    network call.
+
+    Because the v2 client validates `level` before any network call (raising
+    ValueError for unknown values), this test would fail if `level` were
+    dropped from compact.py or set to an invalid value.
+    """
+    import loganne as _real_loganne
+
+    captured = []
+
+    def _fake_loganne_post(url, **kwargs):
+        captured.append({"url": url, "json": kwargs.get("json", {})})
+        resp = MagicMock()
+        resp.raise_for_status = lambda: None
+        return resp
+
+    with patch("requests.post", return_value=_ok_response()), \
+         patch.object(compact, "updateLoganne", _real_loganne.updateLoganne), \
+         patch.object(_real_loganne.session, "post", side_effect=_fake_loganne_post):
+        compact.run_compaction()
+
+    compaction_calls = [c for c in captured if c["json"].get("type") == "tripleStoreCompaction"]
+    assert len(compaction_calls) >= 1, "Expected at least one tripleStoreCompaction loganne POST"
+
+    payload = compaction_calls[0]["json"]
+    assert payload.get("level") == "routine", (
+        f"Expected level='routine' in HTTP payload, got: {payload}"
+    )
+    assert payload.get("humanReadable") == "TDB2 triplestore compacted"
+    assert payload.get("type") == "tripleStoreCompaction"
+    assert "source" in payload
