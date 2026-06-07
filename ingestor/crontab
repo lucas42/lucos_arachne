@@ -1,0 +1,3 @@
+INGEST_STARTUP_DELAY=0
+15 04 * * * pipenv --quiet run python -u /home/jobrunner/ingest.py
+30 03 * * 0 pipenv --quiet run python -u /home/jobrunner/compact.py

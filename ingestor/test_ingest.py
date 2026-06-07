@@ -8,6 +8,9 @@ import pytest
 
 os.environ.setdefault("APP_ORIGIN", "https://arachne.example.com")
 os.environ.setdefault("KEY_LUCOS_ARACHNE", "test-key")
+# Required by the real loganne client (imported in the real-transport test below)
+os.environ.setdefault("SYSTEM", "lucos_arachne")
+os.environ.setdefault("LOGANNE_ENDPOINT", "http://stub-loganne/events")
 
 # ---------------------------------------------------------------------------
 # Stub out all modules imported by ingest.py at module level
@@ -456,3 +459,49 @@ def test_schedule_tracker_no_synthetic_system_ids():
         system = c.kwargs.get("system", "")
         assert not system.startswith("lucos_arachne_"), \
             f"Found synthetic system ID in schedule_tracker call: {system!r}"
+
+
+# ---------------------------------------------------------------------------
+# Real-transport loganne test (ADR-0011)
+# ---------------------------------------------------------------------------
+
+def test_ingest_loganne_real_transport():
+    """Drive the real loganne v2 client against a patched HTTP session.
+
+    ingest.py was imported with a stub loganne — this test temporarily
+    replaces ingest.updateLoganne with the real function, then patches
+    loganne.session.post to capture the HTTP payload without making a real
+    network call.
+
+    Because the v2 client validates `level` before any network call (raising
+    ValueError for unknown values), this test would fail if `level` were
+    dropped from ingest.py or set to an invalid value.
+    """
+    import loganne as _real_loganne
+
+    captured = []
+
+    def _fake_loganne_post(url, **kwargs):
+        captured.append({"url": url, "json": kwargs.get("json", {})})
+        resp = MagicMock()
+        resp.raise_for_status = lambda: None
+        return resp
+
+    _reset_mocks()
+    # Hash-match scenario: nothing changed, simplest code path
+    _get_source_hash_mock.return_value = _expected_hash(_CONTENT, _CONTENT_TYPE)
+
+    with patch.object(ingest, "updateLoganne", _real_loganne.updateLoganne), \
+         patch.object(_real_loganne.session, "post", side_effect=_fake_loganne_post):
+        ingest.run_ingest()
+
+    ingest_calls = [c for c in captured if c["json"].get("type") == "knowledgeIngest"]
+    assert len(ingest_calls) >= 1, "Expected at least one knowledgeIngest loganne POST"
+
+    payload = ingest_calls[0]["json"]
+    assert payload.get("level") == "routine", (
+        f"Expected level='routine' in HTTP payload, got: {payload}"
+    )
+    assert payload.get("humanReadable") == "Knowledge graph checked — no changes"
+    assert payload.get("type") == "knowledgeIngest"
+    assert "source" in payload
