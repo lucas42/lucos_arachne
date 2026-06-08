@@ -1,4 +1,4 @@
-FROM python:3.14.2-alpine
+FROM python:3.14.5-alpine
 
 # Install supercronic v0.2.46 — a container-native cron runner that propagates the
 # container environment to jobs natively, logs stdout/stderr to docker logs, and runs
