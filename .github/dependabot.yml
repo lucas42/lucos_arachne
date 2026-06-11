@@ -151,6 +151,48 @@ updates:
       major:
         update-types:
           - major
+  - package-ecosystem: docker
+    directory: /./ingestor
+    schedule:
+      interval: daily
+      time: '07:00'
+    allow:
+      - dependency-type: all
+    ignore:
+      - dependency-name: "python"
+        versions:
+          - "*.pre.alpine.a"   # alpha (e.g. 3.15.0a2-alpine)
+          - "*.pre.alpine.b"   # beta  (e.g. 3.15.0b2-alpine)
+          - "*.pre.alpine.rc*" # rc    (e.g. 3.15.0rc1-alpine)
+    groups:
+      minor-and-patch:
+        update-types:
+          - minor
+          - patch
+      major:
+        update-types:
+          - major
+  - package-ecosystem: docker
+    directory: /./mcp
+    schedule:
+      interval: daily
+      time: '07:00'
+    allow:
+      - dependency-type: all
+    ignore:
+      - dependency-name: "python"
+        versions:
+          - "*.pre.slim.a"   # alpha (e.g. 3.15.0a2-slim)
+          - "*.pre.slim.b"   # beta  (e.g. 3.15.0b2-slim)
+          - "*.pre.slim.rc*" # rc    (e.g. 3.15.0rc1-slim)
+    groups:
+      minor-and-patch:
+        update-types:
+          - minor
+          - patch
+      major:
+        update-types:
+          - major
   - package-ecosystem: github-actions
     directory: /
     schedule:
