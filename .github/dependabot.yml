@@ -193,6 +193,36 @@ updates:
       major:
         update-types:
           - major
+  - package-ecosystem: docker
+    directory: /./web
+    schedule:
+      interval: daily
+      time: '07:00'
+    allow:
+      - dependency-type: all
+    groups:
+      minor-and-patch:
+        update-types:
+          - minor
+          - patch
+      major:
+        update-types:
+          - major
+  - package-ecosystem: docker
+    directory: /./triplestore
+    schedule:
+      interval: daily
+      time: '07:00'
+    allow:
+      - dependency-type: all
+    groups:
+      minor-and-patch:
+        update-types:
+          - minor
+          - patch
+      major:
+        update-types:
+          - major
   - package-ecosystem: github-actions
     directory: /
     schedule:
