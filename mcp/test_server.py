@@ -5,9 +5,11 @@ All tests mock out HTTP calls to the triplestore and Typesense so they
 can run without any external services.
 """
 
+import asyncio
 import json
+import logging
 import time
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 import requests
@@ -1310,3 +1312,57 @@ def test_probe_tool_funcs_covers_all_probe_tools():
             f"_PROBE_TOOL_FUNCS is missing an entry for '{tool_name}' "
             f"— probe runner will skip this tool silently"
         )
+
+
+# ---------------------------------------------------------------------------
+# _verify_aithne_agent_jwt — JWKS failure vs token validation failure
+# ---------------------------------------------------------------------------
+
+def _run(coro):
+    """Run a coroutine synchronously for use in synchronous test functions."""
+    return asyncio.run(coro)
+
+
+def test_verify_aithne_agent_jwt_jwks_failure_returns_false(caplog):
+    """A JWKS fetch failure returns False and logs a WARNING."""
+    with patch("server._jwks_client") as mock_client:
+        mock_client.get_signing_key_from_jwt.side_effect = Exception("network error")
+        with caplog.at_level(logging.WARNING, logger="server"):
+            result = _run(server._verify_aithne_agent_jwt("anytoken"))
+
+    assert result is False
+    assert any("JWKS key fetch failed" in r.message for r in caplog.records), (
+        "Expected a WARNING log mentioning 'JWKS key fetch failed'"
+    )
+
+
+def test_verify_aithne_agent_jwt_jwks_failure_log_includes_exception(caplog):
+    """The JWKS failure log message includes the underlying exception detail."""
+    with patch("server._jwks_client") as mock_client:
+        mock_client.get_signing_key_from_jwt.side_effect = Exception("DNS resolution failed")
+        with caplog.at_level(logging.WARNING, logger="server"):
+            _run(server._verify_aithne_agent_jwt("anytoken"))
+
+    log_text = " ".join(r.message for r in caplog.records)
+    assert "DNS resolution failed" in log_text, (
+        "Expected the exception message to appear in the WARNING log"
+    )
+
+
+def test_verify_aithne_agent_jwt_token_validation_failure_returns_false_silently(caplog):
+    """A bad token (wrong signature, expired, etc.) returns False with no WARNING logged."""
+    mock_signing_key = MagicMock()
+    mock_signing_key.key = "fake-key"
+
+    with patch("server._jwks_client") as mock_client:
+        mock_client.get_signing_key_from_jwt.return_value = mock_signing_key
+        with patch("server.jwt.decode") as mock_decode:
+            mock_decode.side_effect = Exception("Signature verification failed")
+            with caplog.at_level(logging.WARNING, logger="server"):
+                result = _run(server._verify_aithne_agent_jwt("badtoken"))
+
+    assert result is False
+    warning_records = [r for r in caplog.records if r.levelno >= logging.WARNING]
+    assert len(warning_records) == 0, (
+        f"Expected no WARNING logs for token validation failure, got: {warning_records}"
+    )

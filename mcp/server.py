@@ -5,6 +5,7 @@ Exposes the lucos_arachne knowledge graph via the Model Context Protocol.
 """
 
 import asyncio
+import logging
 import os
 import time
 from contextlib import asynccontextmanager
@@ -31,6 +32,8 @@ from probe_parameters import (
     PROBE_STALE_THRESHOLD_S,
     PROBE_TOOLS,
 )
+
+logger = logging.getLogger(__name__)
 
 RESOURCES_DIR = Path(__file__).parent / "resources"
 
@@ -853,6 +856,11 @@ async def _verify_aithne_agent_jwt(token: str) -> bool:
         signing_key = await asyncio.to_thread(
             _jwks_client.get_signing_key_from_jwt, token
         )
+    except Exception as e:
+        # JWKS fetch or key-lookup failure — infrastructure problem, worth logging
+        logger.warning("JWKS key fetch failed: %s", e)
+        return False
+    try:
         payload = jwt.decode(
             token,
             signing_key.key,
@@ -863,6 +871,7 @@ async def _verify_aithne_agent_jwt(token: str) -> bool:
         )
         return _has_arachne_access(payload.get("scopes", []))
     except Exception:
+        # Token validation failure — expected for bad tokens, no log needed
         return False
 
 
