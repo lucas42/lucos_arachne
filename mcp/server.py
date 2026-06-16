@@ -875,23 +875,12 @@ async def _verify_aithne_agent_jwt(token: str) -> bool:
         return False
 
 
-def _parse_valid_keys() -> set:
-    """Parse CLIENT_KEYS env var and return the set of valid token values.
-
-    CLIENT_KEYS format: semicolon-separated 'system:env=token' pairs.
-    Returns an empty set if CLIENT_KEYS is unset or empty.
-    """
-    client_keys_str = os.environ.get("CLIENT_KEYS", "")
-    return {entry.split("=", 1)[1] for entry in client_keys_str.split(";") if "=" in entry}
-
-
 class BearerAuthMiddleware(BaseHTTPMiddleware):
     """Validate Authorization: Bearer <token> on all routes except /_info.
 
-    Dual-accept window (lucos_arachne#636): accepts an aithne-issued agent JWT
-    first; falls back to the legacy CLIENT_KEYS equality check so existing
-    agent access is not broken mid-cutover. The CLIENT_KEYS fallback will be
-    removed in a follow-up once the canary is validated in production.
+    Accepts only aithne-issued agent JWTs carrying arachne:read (per ADR-0001 §6).
+    The legacy CLIENT_KEYS fallback was removed in lucos_arachne#640 once all
+    consuming agents had been migrated to per-agent aithne principals.
     """
 
     async def dispatch(self, request: Request, call_next):
@@ -901,9 +890,6 @@ class BearerAuthMiddleware(BaseHTTPMiddleware):
         if auth.startswith("Bearer "):
             token = auth[len("Bearer "):]
             if await _verify_aithne_agent_jwt(token):
-                return await call_next(request)
-            # TODO: remove CLIENT_KEYS fallback once canary is validated (#636 follow-up)
-            if token in _parse_valid_keys():
                 return await call_next(request)
         return Response(
             content="Unauthorized",
