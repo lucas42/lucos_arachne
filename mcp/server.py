@@ -7,6 +7,7 @@ Exposes the lucos_arachne knowledge graph via the Model Context Protocol.
 import asyncio
 import logging
 import os
+import re
 import time
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -823,6 +824,21 @@ _AITHNE_AUDIENCE = "l42.eu"
 _jwks_client = PyJWKClient(_AITHNE_JWKS_URL, cache_keys=True, lifespan=300)
 
 
+def _get_signing_key(token: str):
+    """Wrapper around PyJWKClient that sanitises the kid claim in error messages.
+
+    PyJWKClientError includes the attacker-controlled kid value in its message
+    (e.g. "Unable to find a signing key that matches: {kid}"). Stripping control
+    characters (\\x00–\\x1f and \\x7f) prevents log injection via the WARNING
+    emitted by _verify_aithne_agent_jwt when a JWKS lookup fails.
+    """
+    try:
+        return _jwks_client.get_signing_key_from_jwt(token)
+    except Exception as e:
+        safe_msg = re.sub(r'[\x00-\x1f\x7f]', '', str(e))
+        raise type(e)(safe_msg) from None
+
+
 def _has_arachne_access(scopes: list) -> bool:
     """Return True if the JWT scopes list grants access to arachne.
 
@@ -853,9 +869,7 @@ async def _verify_aithne_agent_jwt(token: str) -> bool:
     (startup or key rotation) does not block the event loop.
     """
     try:
-        signing_key = await asyncio.to_thread(
-            _jwks_client.get_signing_key_from_jwt, token
-        )
+        signing_key = await asyncio.to_thread(_get_signing_key, token)
     except Exception as e:
         # JWKS fetch or key-lookup failure — infrastructure problem, worth logging
         logger.warning("JWKS key fetch failed: %s", e)

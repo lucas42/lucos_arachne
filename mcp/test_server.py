@@ -13,6 +13,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 import requests
+from starlette.testclient import TestClient
 
 import server
 
@@ -1366,3 +1367,52 @@ def test_verify_aithne_agent_jwt_token_validation_failure_returns_false_silently
     assert len(warning_records) == 0, (
         f"Expected no WARNING logs for token validation failure, got: {warning_records}"
     )
+
+
+def test_verify_aithne_agent_jwt_kid_control_chars_stripped_from_log(caplog):
+    """Control characters injected via the kid claim are stripped from the WARNING log.
+
+    Regression test for #642: a crafted token with a newline (or other control
+    character) in the kid value must not produce a spurious extra log line.
+    """
+    injected_kid = "abc\nINFO 2026-01-01 Fake: User authenticated successfully"
+    with patch("server._jwks_client") as mock_client:
+        mock_client.get_signing_key_from_jwt.side_effect = Exception(
+            f"Unable to find a signing key that matches: {injected_kid}"
+        )
+        with caplog.at_level(logging.WARNING, logger="server"):
+            _run(server._verify_aithne_agent_jwt("anytoken"))
+
+    log_text = " ".join(r.message for r in caplog.records)
+    # The injected newline must not appear in any log message
+    assert "\n" not in log_text, (
+        "Newline from attacker-controlled kid survived into log — log injection not mitigated"
+    )
+    # The benign prefix of the kid value must survive sanitisation
+    assert "abc" in log_text
+
+
+# ---------------------------------------------------------------------------
+# BearerAuthMiddleware — CLIENT_KEYS rejection regression
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def client():
+    """HTTP test client for the Starlette app (without starting the probe loop)."""
+    return TestClient(server.app)
+
+
+def test_mcp_rejects_client_keys_bearer_token(client):
+    """A static bearer token (CLIENT_KEYS format) must be rejected with 401.
+
+    Regression guard for #645: if a future merge conflict accidentally
+    re-introduces the CLIENT_KEYS fallback that was removed in #644, this
+    test will fail, preventing the regression from reaching production.
+
+    A static string like 'some-static-api-key' is not a JWT, so
+    _jwks_client.get_signing_key_from_jwt raises immediately at the
+    header-decode step (no network call required).
+    """
+    response = client.get("/", headers={"Authorization": "Bearer some-static-api-key"})
+    assert response.status_code == 401
