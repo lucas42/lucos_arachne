@@ -1399,7 +1399,7 @@ def test_verify_aithne_agent_jwt_kid_control_chars_stripped_from_log(caplog):
 
 @pytest.fixture
 def client():
-    """HTTP test client for the Starlette app (without starting the probe loop)."""
+    """HTTP test client for the Starlette app."""
     return TestClient(server.app)
 
 
