@@ -9,12 +9,23 @@ const AITHNE_AUDIENCE = 'l42.eu';
 // and re-fetches when a token's kid is not found in the cache.
 const JWKS = createRemoteJWKSet(AITHNE_JWKS_URL);
 
+// Internal verify function — replaced in tests via _setVerifier.
+let _verifyFn = (token, jwks, opts) => jwtVerify(token, jwks, opts);
+
+/**
+ * Override the JWT verifier. For testing only — do not call in production code.
+ * Allows unit tests to exercise the middleware without a live JWKS endpoint.
+ */
+export function _setVerifier(fn) {
+	_verifyFn = fn;
+}
+
 /**
  * Parse a Cookie header string into a key-value object.
  * Splits on '; ' between pairs and on the first '=' only within each pair,
  * so cookie values that contain '=' (e.g. base64-encoded tokens) are preserved.
  */
-function parseCookies(header) {
+export function parseCookies(header) {
 	if (!header) return {};
 	return Object.fromEntries(
 		header.split('; ')
@@ -37,7 +48,7 @@ export async function middleware(req, res, next) {
 
 	if (sessionToken) {
 		try {
-			const { payload } = await jwtVerify(sessionToken, JWKS, {
+			const { payload } = await _verifyFn(sessionToken, JWKS, {
 				issuer: AITHNE_ISSUER,
 				audience: AITHNE_AUDIENCE,
 				clockTolerance: 30,  // 30-second skew tolerance per aithne local-verification-contract
