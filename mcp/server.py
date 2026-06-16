@@ -56,6 +56,7 @@ SYSTEMS_TO_GRAPHS = {
 # The MCP server must bind on all interfaces so nginx can proxy to it.
 # FastMCP defaults to 127.0.0.1 (localhost-only), which breaks container networking.
 PORT = int(os.environ.get("PORT", "8200"))
+_ENVIRONMENT = os.environ.get("ENVIRONMENT", "production")
 
 TYPESENSE_URL = "http://search:8108"
 # KEY_LUCOS_ARACHNE is registered in the search container with full ["*"] permissions
@@ -820,12 +821,26 @@ _AITHNE_AUDIENCE = "l42.eu"
 _jwks_client = PyJWKClient(_AITHNE_JWKS_URL, cache_keys=True, lifespan=300)
 
 
+def _has_arachne_access(scopes: list) -> bool:
+    """Return True if the JWT scopes list grants access to arachne.
+
+    ADR-0001 §6: access is granted by named scope, not bare identity.
+    Accepts arachne:read directly, or render-ui in the development environment
+    so lucos-ux can snapshot rendered pages without a per-service grant.
+    """
+    if "arachne:read" in scopes:
+        return True
+    if _ENVIRONMENT == "development" and "render-ui" in scopes:
+        return True
+    return False
+
+
 async def _verify_aithne_agent_jwt(token: str) -> bool:
-    """Return True if token is a valid aithne-issued agent-class JWT.
+    """Return True if token is a valid aithne-issued JWT with arachne access.
 
     Validates signature (ES256), issuer, audience, expiry (30 s clock-skew
-    tolerance), and principal_class == "agent" per the aithne
-    local-verification-contract.
+    tolerance), and requires arachne:read scope (or render-ui in development)
+    per ADR-0001 §6: access is granted by named scope, not bare identity.
 
     JWKS key fetching is run in a thread-pool executor so that a cache miss
     (startup or key rotation) does not block the event loop.
@@ -842,7 +857,7 @@ async def _verify_aithne_agent_jwt(token: str) -> bool:
             audience=_AITHNE_AUDIENCE,
             leeway=30,  # 30-second clock-skew tolerance per local-verification-contract
         )
-        return payload.get("principal_class") == "agent"
+        return _has_arachne_access(payload.get("scopes", []))
     except Exception:
         return False
 

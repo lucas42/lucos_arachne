@@ -20,6 +20,22 @@ export function _setVerifier(fn) {
 	_verifyFn = fn;
 }
 
+// ADR-0001 §6: access is granted by named scope, not bare identity.
+// render-ui is a dev-only escape hatch so lucos-ux can snapshot pages without
+// a per-service grant in the development environment.
+const ENVIRONMENT = process.env.ENVIRONMENT ?? 'production';
+
+/**
+ * Return true if the JWT scopes array grants access to the arachne /explore UI.
+ *
+ * Accepts arachne:read (the canonical scope) or render-ui in development.
+ */
+export function hasArachneAccess(scopes) {
+	if (scopes.includes('arachne:read')) return true;
+	if (ENVIRONMENT === 'development' && scopes.includes('render-ui')) return true;
+	return false;
+}
+
 /**
  * Parse a Cookie header string into a key-value object.
  * Splits on '; ' between pairs and on the first '=' only within each pair,
@@ -39,8 +55,10 @@ export function parseCookies(header) {
 
 /**
  * Provide express middleware function for checking authentication.
- * Reads the aithne_session cookie and verifies the JWT locally via JWKS.
- * Unauthenticated requests are redirected to the aithne login page.
+ * Reads the aithne_session cookie, verifies the JWT locally via JWKS, and
+ * checks for the arachne:read scope (ADR-0001 §6: scope-based access control).
+ * Unauthenticated or unauthorised requests are redirected to the aithne login
+ * page (re-authenticating may yield a fresh token once a grant is in place).
  */
 export async function middleware(req, res, next) {
 	const cookies = parseCookies(req.headers.cookie);
@@ -54,14 +72,19 @@ export async function middleware(req, res, next) {
 				clockTolerance: 30,  // 30-second skew tolerance per aithne local-verification-contract
 				algorithms: ['ES256'],  // pin to ES256 — defence-in-depth against algorithm confusion
 			});
-			res.auth_agent = payload;
-			return next();
+			if (hasArachneAccess(payload.scopes ?? [])) {
+				res.auth_agent = payload;
+				return next();
+			}
+			// JWT is valid but the principal lacks arachne:read. Redirecting to login
+			// gives them a fresh token if the scope was granted since their last auth.
+			console.warn('JWT missing required arachne:read scope:', payload.sub);
 		} catch (error) {
 			console.error('JWT verification failed:', error.message);
 		}
 	}
 
-	// Not authenticated — redirect to aithne login.
+	// Not authenticated / not authorised — redirect to aithne login.
 	// req.protocol is populated from X-Forwarded-Proto by Express when trust proxy
 	// is set (configured in index.js), so this correctly returns 'https' in production.
 	// Preserve the existing /explore path-prefix so the user lands back on the
