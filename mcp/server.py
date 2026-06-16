@@ -874,6 +874,7 @@ class BearerAuthMiddleware(BaseHTTPMiddleware):
             token = auth[len("Bearer "):]
             if await _verify_aithne_agent_jwt(token):
                 return await call_next(request)
+            # TODO: remove CLIENT_KEYS fallback once canary is validated (#636 follow-up)
             if token in _parse_valid_keys():
                 return await call_next(request)
         return Response(

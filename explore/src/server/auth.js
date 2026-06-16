@@ -41,6 +41,7 @@ export async function middleware(req, res, next) {
 				issuer: AITHNE_ISSUER,
 				audience: AITHNE_AUDIENCE,
 				clockTolerance: 30,  // 30-second skew tolerance per aithne local-verification-contract
+				algorithms: ['ES256'],  // pin to ES256 — defence-in-depth against algorithm confusion
 			});
 			res.auth_agent = payload;
 			return next();
@@ -50,9 +51,10 @@ export async function middleware(req, res, next) {
 	}
 
 	// Not authenticated — redirect to aithne login.
+	// req.protocol is populated from X-Forwarded-Proto by Express when trust proxy
+	// is set (configured in index.js), so this correctly returns 'https' in production.
 	// Preserve the existing /explore path-prefix so the user lands back on the
 	// correct page after authenticating.
-	const protocol = req.query['X-Forwarded-Proto'] || 'http';
-	const returnUrl = `${protocol}://${req.headers.host}/explore${req.originalUrl}`;
+	const returnUrl = `${req.protocol}://${req.headers.host}/explore${req.originalUrl}`;
 	return res.redirect(302, `https://aithne.l42.eu/auth/login?next=${encodeURIComponent(returnUrl)}`);
 }
