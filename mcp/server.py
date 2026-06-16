@@ -12,8 +12,10 @@ from pathlib import Path
 from typing import Optional
 from urllib.parse import urlparse
 
+import jwt
 import requests
 import uvicorn
+from jwt import PyJWKClient
 from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
 from starlette.applications import Starlette
@@ -809,6 +811,42 @@ def get_data_sources() -> str:
     return "\n".join(lines)
 
 
+_AITHNE_JWKS_URL = "https://aithne.l42.eu/.well-known/jwks.json"
+_AITHNE_ISSUER = "https://aithne.l42.eu"
+_AITHNE_AUDIENCE = "l42.eu"
+
+# JWKS client with 5-minute key cache. Fetches keys on first use and whenever
+# a token carries a kid not found in the cache (key rotation).
+_jwks_client = PyJWKClient(_AITHNE_JWKS_URL, cache_keys=True, lifespan=300)
+
+
+async def _verify_aithne_agent_jwt(token: str) -> bool:
+    """Return True if token is a valid aithne-issued agent-class JWT.
+
+    Validates signature (ES256), issuer, audience, expiry (30 s clock-skew
+    tolerance), and principal_class == "agent" per the aithne
+    local-verification-contract.
+
+    JWKS key fetching is run in a thread-pool executor so that a cache miss
+    (startup or key rotation) does not block the event loop.
+    """
+    try:
+        signing_key = await asyncio.to_thread(
+            _jwks_client.get_signing_key_from_jwt, token
+        )
+        payload = jwt.decode(
+            token,
+            signing_key.key,
+            algorithms=["ES256"],
+            issuer=_AITHNE_ISSUER,
+            audience=_AITHNE_AUDIENCE,
+            leeway=30,  # 30-second clock-skew tolerance per local-verification-contract
+        )
+        return payload.get("principal_class") == "agent"
+    except Exception:
+        return False
+
+
 def _parse_valid_keys() -> set:
     """Parse CLIENT_KEYS env var and return the set of valid token values.
 
@@ -820,7 +858,13 @@ def _parse_valid_keys() -> set:
 
 
 class BearerAuthMiddleware(BaseHTTPMiddleware):
-    """Validate Authorization: Bearer <token> on all routes except /_info."""
+    """Validate Authorization: Bearer <token> on all routes except /_info.
+
+    Dual-accept window (lucos_arachne#636): accepts an aithne-issued agent JWT
+    first; falls back to the legacy CLIENT_KEYS equality check so existing
+    agent access is not broken mid-cutover. The CLIENT_KEYS fallback will be
+    removed in a follow-up once the canary is validated in production.
+    """
 
     async def dispatch(self, request: Request, call_next):
         if request.url.path == "/_info":
@@ -828,6 +872,9 @@ class BearerAuthMiddleware(BaseHTTPMiddleware):
         auth = request.headers.get("Authorization", "")
         if auth.startswith("Bearer "):
             token = auth[len("Bearer "):]
+            if await _verify_aithne_agent_jwt(token):
+                return await call_next(request)
+            # TODO: remove CLIENT_KEYS fallback once canary is validated (#636 follow-up)
             if token in _parse_valid_keys():
                 return await call_next(request)
         return Response(
