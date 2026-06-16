@@ -1,6 +1,6 @@
 import { test, mock } from 'node:test';
 import assert from 'node:assert/strict';
-import { middleware, parseCookies, _setVerifier } from './auth.js';
+import { middleware, parseCookies, hasArachneAccess, _setVerifier } from './auth.js';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -64,6 +64,47 @@ test('parseCookies: extracts aithne_session from a multi-cookie header', () => {
 	assert.equal(result.another, 'x');
 });
 
+// ─── hasArachneAccess ─────────────────────────────────────────────────────────
+
+// Note: ENVIRONMENT defaults to 'production' in the test process (process.env.ENVIRONMENT
+// is not set in the test runner), so render-ui tests use the production path.
+
+test('hasArachneAccess: arachne:read grants access', () => {
+	assert.equal(hasArachneAccess(['arachne:read']), true);
+});
+
+test('hasArachneAccess: arachne:read alongside other scopes grants access', () => {
+	assert.equal(hasArachneAccess(['eolas:read', 'arachne:read', 'webhook']), true);
+});
+
+test('hasArachneAccess: empty scopes denies access', () => {
+	assert.equal(hasArachneAccess([]), false);
+});
+
+test('hasArachneAccess: unrelated scopes deny access', () => {
+	assert.equal(hasArachneAccess(['eolas:read', 'webhook']), false);
+});
+
+test('hasArachneAccess: render-ui grants access in development', () => {
+	const orig = process.env.ENVIRONMENT;
+	process.env.ENVIRONMENT = 'development';
+	try {
+		assert.equal(hasArachneAccess(['render-ui']), true);
+	} finally {
+		if (orig === undefined) { delete process.env.ENVIRONMENT; } else { process.env.ENVIRONMENT = orig; }
+	}
+});
+
+test('hasArachneAccess: render-ui denies in production', () => {
+	const orig = process.env.ENVIRONMENT;
+	process.env.ENVIRONMENT = 'production';
+	try {
+		assert.equal(hasArachneAccess(['render-ui']), false);
+	} finally {
+		if (orig === undefined) { delete process.env.ENVIRONMENT; } else { process.env.ENVIRONMENT = orig; }
+	}
+});
+
 // ─── middleware: redirect path (no JWT verification involved) ─────────────────
 
 test('middleware: no cookie → redirects to aithne login', async () => {
@@ -103,8 +144,8 @@ test('middleware: unauthenticated redirect encodes req.protocol into return URL 
 
 // ─── middleware: JWT paths (via _setVerifier seam) ────────────────────────────
 
-test('middleware: valid JWT → calls next() and sets res.auth_agent', async () => {
-	const fakePayload = { sub: 'user:1', principal_class: 'human', exp: 9999999999 };
+test('middleware: valid JWT with arachne:read → calls next() and sets res.auth_agent', async () => {
+	const fakePayload = { sub: 'user:1', principal_class: 'human', scopes: ['arachne:read'], exp: 9999999999 };
 	_setVerifier(async () => ({ payload: fakePayload }));
 	const req = makeReq({ cookie: 'aithne_session=valid.jwt.token' });
 	const res = makeRes();
@@ -113,6 +154,29 @@ test('middleware: valid JWT → calls next() and sets res.auth_agent', async () 
 	assert.equal(next.mock.calls.length, 1, 'next() must be called once');
 	assert.equal(res.redirect.mock.calls.length, 0, 'must not redirect on success');
 	assert.deepEqual(res.auth_agent, fakePayload);
+});
+
+test('middleware: valid JWT missing arachne:read → redirects to aithne login', async () => {
+	// Valid session but scope not granted — redirect so they can re-auth after grant.
+	const fakePayload = { sub: 'user:2', principal_class: 'human', scopes: ['eolas:read'], exp: 9999999999 };
+	_setVerifier(async () => ({ payload: fakePayload }));
+	const req = makeReq({ cookie: 'aithne_session=valid.jwt.no-scope' });
+	const res = makeRes();
+	const next = mock.fn();
+	await middleware(req, res, next);
+	assert.equal(next.mock.calls.length, 0, 'next() must not be called without scope');
+	assert.equal(res.redirect.mock.calls.length, 1, 'must redirect when scope missing');
+});
+
+test('middleware: valid JWT with empty scopes → redirects (no scope = no access)', async () => {
+	const fakePayload = { sub: 'user:3', scopes: [], exp: 9999999999 };
+	_setVerifier(async () => ({ payload: fakePayload }));
+	const req = makeReq({ cookie: 'aithne_session=valid.jwt.empty-scopes' });
+	const res = makeRes();
+	const next = mock.fn();
+	await middleware(req, res, next);
+	assert.equal(next.mock.calls.length, 0);
+	assert.equal(res.redirect.mock.calls.length, 1);
 });
 
 test('middleware: expired JWT → redirects to aithne login (fail-closed)', async () => {
