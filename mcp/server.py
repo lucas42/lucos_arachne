@@ -56,7 +56,6 @@ SYSTEMS_TO_GRAPHS = {
 # The MCP server must bind on all interfaces so nginx can proxy to it.
 # FastMCP defaults to 127.0.0.1 (localhost-only), which breaks container networking.
 PORT = int(os.environ.get("PORT", "8200"))
-_ENVIRONMENT = os.environ.get("ENVIRONMENT", "production")
 
 TYPESENSE_URL = "http://search:8108"
 # KEY_LUCOS_ARACHNE is registered in the search container with full ["*"] permissions
@@ -824,13 +823,18 @@ _jwks_client = PyJWKClient(_AITHNE_JWKS_URL, cache_keys=True, lifespan=300)
 def _has_arachne_access(scopes: list) -> bool:
     """Return True if the JWT scopes list grants access to arachne.
 
-    ADR-0001 §6: access is granted by named scope, not bare identity.
-    Accepts arachne:read directly, or render-ui in the development environment
-    so lucos-ux can snapshot rendered pages without a per-service grant.
+    ADR-0001 §6: access is granted by named scope, not bare identity. Accepts
+    arachne:read for all principals (human and agent alike — /mcp is not
+    restricted to agents only; the scope is the gate). Also accepts render-ui
+    in the development environment so lucos-ux can snapshot rendered pages
+    without a per-service grant.
+
+    os.environ is read on every call (not cached at module load) so that the
+    environment can be controlled in tests.
     """
     if "arachne:read" in scopes:
         return True
-    if _ENVIRONMENT == "development" and "render-ui" in scopes:
+    if os.environ.get("ENVIRONMENT", "production") == "development" and "render-ui" in scopes:
         return True
     return False
 

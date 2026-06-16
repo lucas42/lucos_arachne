@@ -85,13 +85,24 @@ test('hasArachneAccess: unrelated scopes deny access', () => {
 	assert.equal(hasArachneAccess(['eolas:read', 'webhook']), false);
 });
 
-test('hasArachneAccess: render-ui grants access in development (tests run in dev environment)', () => {
-	// ENVIRONMENT=development is set in the local shell environment where tests run.
-	// render-ui is the escape hatch for lucos-ux page snapshots — it grants access
-	// in development so pages can be rendered without a per-service grant.
-	// In production (ENVIRONMENT=production), render-ui would NOT grant access, but
-	// that path cannot be tested without a seam for ENVIRONMENT.
-	assert.equal(hasArachneAccess(['render-ui']), true);
+test('hasArachneAccess: render-ui grants access in development', () => {
+	const orig = process.env.ENVIRONMENT;
+	process.env.ENVIRONMENT = 'development';
+	try {
+		assert.equal(hasArachneAccess(['render-ui']), true);
+	} finally {
+		if (orig === undefined) { delete process.env.ENVIRONMENT; } else { process.env.ENVIRONMENT = orig; }
+	}
+});
+
+test('hasArachneAccess: render-ui denies in production', () => {
+	const orig = process.env.ENVIRONMENT;
+	process.env.ENVIRONMENT = 'production';
+	try {
+		assert.equal(hasArachneAccess(['render-ui']), false);
+	} finally {
+		if (orig === undefined) { delete process.env.ENVIRONMENT; } else { process.env.ENVIRONMENT = orig; }
+	}
 });
 
 // ─── middleware: redirect path (no JWT verification involved) ─────────────────

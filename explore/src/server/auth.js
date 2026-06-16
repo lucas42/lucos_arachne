@@ -20,19 +20,19 @@ export function _setVerifier(fn) {
 	_verifyFn = fn;
 }
 
-// ADR-0001 §6: access is granted by named scope, not bare identity.
-// render-ui is a dev-only escape hatch so lucos-ux can snapshot pages without
-// a per-service grant in the development environment.
-const ENVIRONMENT = process.env.ENVIRONMENT ?? 'production';
-
 /**
  * Return true if the JWT scopes array grants access to the arachne /explore UI.
  *
- * Accepts arachne:read (the canonical scope) or render-ui in development.
+ * ADR-0001 §6: access is granted by named scope, not bare identity.
+ * Accepts arachne:read (the canonical scope) for all principals, or render-ui
+ * in the development environment as a lucos-ux page-snapshot escape hatch.
+ *
+ * process.env.ENVIRONMENT is read on every call (not cached at module load) so
+ * that tests can control the environment by setting the env var directly.
  */
 export function hasArachneAccess(scopes) {
 	if (scopes.includes('arachne:read')) return true;
-	if (ENVIRONMENT === 'development' && scopes.includes('render-ui')) return true;
+	if ((process.env.ENVIRONMENT ?? 'production') === 'development' && scopes.includes('render-ui')) return true;
 	return false;
 }
 
