@@ -1,4 +1,4 @@
-"""Unit tests for is_authorised() and _get_valid_keys() — Phase 3: missing header must return False."""
+"""Unit tests for is_authorised() and _get_valid_keys() — fail-closed: missing CLIENT_KEYS or missing/invalid Bearer token must return False."""
 import os
 import sys
 import types
@@ -52,10 +52,11 @@ def test_get_valid_keys_multiple_pairs():
 	assert _get_valid_keys() == {"tokenA", "tokenB"}
 
 
-# is_authorised tests (Phase 3 behaviour)
-def test_no_client_keys_accepts():
+# is_authorised tests (fail-closed behaviour)
+def test_no_client_keys_rejects():
+	"""When CLIENT_KEYS is absent, all requests must be rejected (fail-closed)."""
 	os.environ.pop("CLIENT_KEYS", None)
-	assert is_authorised({}) is True
+	assert is_authorised({}) is False
 
 
 def test_valid_token_accepted():

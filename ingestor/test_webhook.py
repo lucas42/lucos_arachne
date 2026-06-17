@@ -86,7 +86,7 @@ class _SyncExecutor:
 _server_module._executor = _SyncExecutor()
 
 
-def _make_request(body: dict, path: str = "/webhook", auth: str | None = None):
+def _make_request(body: dict, path: str = "/webhook", auth: str | None = "Bearer testtoken"):
     """
     Invoke WebhookHandler.webhookController() directly and return (status_code, response_body).
     Bypasses the actual HTTP server and socket layer.
@@ -167,6 +167,14 @@ def reset_failure_counter():
     """Reset the global failure counter before each test."""
     _server_module._failed_ingestion_count = 0
     yield
+
+
+@pytest.fixture(autouse=True)
+def set_client_keys():
+    """Set CLIENT_KEYS for each webhook test so is_authorised() doesn't fail-closed."""
+    os.environ["CLIENT_KEYS"] = "test_svc=testtoken"
+    yield
+    os.environ.pop("CLIENT_KEYS", None)
 
 
 # ---------------------------------------------------------------------------
@@ -345,6 +353,30 @@ def test_unknown_event_type_returns_404():
         "url": "https://eolas.l42.eu/metadata/1",
     })
     assert status == 404
+
+
+# ---------------------------------------------------------------------------
+# Auth — missing or invalid token returns 401
+# ---------------------------------------------------------------------------
+
+
+def test_missing_auth_header_returns_401():
+    """Webhook controller returns 401 when no Authorization header is provided."""
+    status, body = _make_request(
+        {"type": "albumCreated", "source": "lucos_eolas", "url": "https://eolas.l42.eu/metadata/1"},
+        auth=None,
+    )
+    assert status == 401
+    assert "Invalid API Key" in body
+
+
+def test_invalid_token_returns_401():
+    """Webhook controller returns 401 when the Bearer token is wrong."""
+    status, body = _make_request(
+        {"type": "albumCreated", "source": "lucos_eolas", "url": "https://eolas.l42.eu/metadata/1"},
+        auth="Bearer wrongtoken",
+    )
+    assert status == 401
 
 
 # ---------------------------------------------------------------------------
