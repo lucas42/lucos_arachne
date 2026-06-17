@@ -63,10 +63,10 @@ def _get_valid_keys():
 	return {pair.split("=", 1)[1] for pair in client_keys_str.split(";") if "=" in pair}
 
 def is_authorised(headers):
-	"""Return True if the request has a valid Bearer token, or if CLIENT_KEYS is not configured."""
+	"""Return True if the request has a valid Bearer token. Fails closed when CLIENT_KEYS is not configured."""
 	valid_keys = _get_valid_keys()
 	if not valid_keys:
-		return True
+		return False
 	auth_header = headers.get("Authorization", "")
 	if not auth_header.startswith("Bearer "):
 		return False
@@ -132,6 +132,8 @@ class WebhookHandler(BaseHTTPRequestHandler):
 		self.wfile.write(b"Accepted")
 
 if __name__ == "__main__":
+	if not os.environ.get("CLIENT_KEYS"):
+		print("\033[93mWARNING: CLIENT_KEYS is not configured — all webhook requests will be rejected (fail-closed)\033[0m", file=sys.stderr)
 	server = HTTPServer(('', port), WebhookHandler)
 	print("Server started on port %s" % (port))
 	server.serve_forever()
