@@ -815,8 +815,9 @@ def get_data_sources() -> str:
     return "\n".join(lines)
 
 
-_AITHNE_JWKS_URL = "https://aithne.l42.eu/.well-known/jwks.json"
-_AITHNE_ISSUER = "https://aithne.l42.eu"
+_AITHNE_ORIGIN = os.environ.get("AITHNE_ORIGIN", "https://aithne.l42.eu")
+_AITHNE_JWKS_URL = f"{_AITHNE_ORIGIN}/.well-known/jwks.json"
+_AITHNE_ISSUER = _AITHNE_ORIGIN
 _AITHNE_AUDIENCE = "l42.eu"
 
 # JWKS client with 5-minute key cache. Fetches keys on first use and whenever
