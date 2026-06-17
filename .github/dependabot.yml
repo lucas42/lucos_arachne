@@ -1,7 +1,7 @@
 version: 2
 updates:
   - package-ecosystem: docker
-    directory: /ingestor
+    directory: /./ingestor
     schedule:
       interval: daily
       time: '07:00'
@@ -31,7 +31,7 @@ updates:
         update-types:
           - major
   - package-ecosystem: docker
-    directory: /triplestore
+    directory: /./triplestore
     schedule:
       interval: daily
       time: '07:00'
@@ -76,7 +76,7 @@ updates:
         update-types:
           - major
   - package-ecosystem: docker
-    directory: /web
+    directory: /./web
     schedule:
       interval: daily
       time: '07:00'
@@ -122,33 +122,12 @@ updates:
         update-types:
           - major
   - package-ecosystem: docker
-    directory: /./ingestor
-    schedule:
-      interval: daily
-      time: '07:00'
-    allow:
-      - dependency-type: all
-    groups:
-      minor-and-patch:
-        update-types:
-          - minor
-          - patch
-      major:
-        update-types:
-          - major
-  - package-ecosystem: docker
     directory: /./mcp
     schedule:
       interval: daily
       time: '07:00'
     allow:
       - dependency-type: all
-    ignore:
-      - dependency-name: "python"
-        versions:
-          - "*.pre.slim.a"   # alpha (e.g. 3.15.0a2-slim)
-          - "*.pre.slim.b"   # beta  (e.g. 3.15.0b2-slim)
-          - "*.pre.slim.rc*" # rc    (e.g. 3.15.0rc1-slim)
     groups:
       minor-and-patch:
         update-types:
@@ -157,23 +136,8 @@ updates:
       major:
         update-types:
           - major
-  - package-ecosystem: docker
-    directory: /./web
-    schedule:
-      interval: daily
-      time: '07:00'
-    allow:
-      - dependency-type: all
-    groups:
-      minor-and-patch:
-        update-types:
-          - minor
-          - patch
-      major:
-        update-types:
-          - major
-  - package-ecosystem: docker
-    directory: /./triplestore
+  - package-ecosystem: pip
+    directory: /mcp
     schedule:
       interval: daily
       time: '07:00'

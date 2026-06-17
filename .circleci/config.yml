@@ -11,15 +11,27 @@ jobs:
           JVM_ARGS: -Xmx512m
     steps:
       - checkout
+      # Each component is installed into its own virtualenv so the two
+      # requirements files never co-resolve. This makes a shared-dependency
+      # version skew between mcp/ and ingestor/ (e.g. pytest) structurally
+      # unable to deadlock CI, and mirrors production where the components run
+      # as separate containers. See lucas42/lucos_arachne#652.
       - run:
-          name: Install dependencies
-          command: pip install -r mcp/requirements.txt -r mcp/requirements-test.txt -r ingestor/requirements-test.txt
+          name: Install MCP dependencies
+          command: |
+            python -m venv /tmp/mcp-venv
+            /tmp/mcp-venv/bin/pip install -r mcp/requirements.txt -r mcp/requirements-test.txt
       - run:
           name: Run MCP tests
-          command: cd mcp && pytest
+          command: cd mcp && /tmp/mcp-venv/bin/pytest
+      - run:
+          name: Install ingestor dependencies
+          command: |
+            python -m venv /tmp/ingestor-venv
+            /tmp/ingestor-venv/bin/pip install -r ingestor/requirements-test.txt
       - run:
           name: Run ingestor tests
-          command: cd ingestor && pytest
+          command: cd ingestor && /tmp/ingestor-venv/bin/pytest
   shellcheck:
     docker:
       - image: koalaman/shellcheck-alpine:stable

@@ -1,4 +1,5 @@
 pytest==9.1.0
 rdflib==7.6.0
 typesense==2.0.0
+requests==2.34.2
 lucos-loganne-pythonclient>=2.0.2
