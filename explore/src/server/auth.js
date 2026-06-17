@@ -1,8 +1,10 @@
 import { jwtVerify, createRemoteJWKSet } from 'jose';
 
-const AITHNE_JWKS_URL = new URL('https://aithne.l42.eu/.well-known/jwks.json');
-const AITHNE_ISSUER = 'https://aithne.l42.eu';
+const AITHNE_ORIGIN = process.env.AITHNE_ORIGIN ?? 'https://aithne.l42.eu';
+const AITHNE_JWKS_URL = new URL(`${AITHNE_ORIGIN}/.well-known/jwks.json`);
+const AITHNE_ISSUER = AITHNE_ORIGIN;
 const AITHNE_AUDIENCE = 'l42.eu';
+const AITHNE_LOGIN_URL = `${AITHNE_ORIGIN}/auth/login`;
 
 // JWKS key set with automatic caching and kid-based rotation support.
 // jose's createRemoteJWKSet fetches on first use, caches for 5 minutes,
@@ -90,5 +92,5 @@ export async function middleware(req, res, next) {
 	// Preserve the existing /explore path-prefix so the user lands back on the
 	// correct page after authenticating.
 	const returnUrl = `${req.protocol}://${req.headers.host}/explore${req.originalUrl}`;
-	return res.redirect(302, `https://aithne.l42.eu/auth/login?next=${encodeURIComponent(returnUrl)}`);
+	return res.redirect(302, `${AITHNE_LOGIN_URL}?next=${encodeURIComponent(returnUrl)}`);
 }

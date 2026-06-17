@@ -90,6 +90,7 @@ services:
       - PORT=8080
       - KEY_LUCOS_ARACHNE
       - ENVIRONMENT
+      - AITHNE_ORIGIN
     healthcheck:
       test: ["CMD", "node", "-e", "const n=require('net');const c=n.connect(8080,'127.0.0.1',()=>{c.end();process.exit(0)});c.on('error',()=>process.exit(1))"]
       interval: 10s
@@ -124,6 +125,7 @@ services:
       - TYPESENSE_ADMIN_KEY
       - APP_ORIGIN
       - ENVIRONMENT
+      - AITHNE_ORIGIN
     depends_on:
       triplestore:
         condition: service_healthy
