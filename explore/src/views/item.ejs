@@ -8,7 +8,7 @@
 		<link rel="manifest" href="/manifest.json" />
 	</head>
 	<body>
-		<lucos-navbar bg-colour="#02666d">Explore Item</lucos-navbar>
+		<lucos-navbar bg-colour="#02666d" aithne-origin="<%= aithneOrigin %>">Explore Item</lucos-navbar>
 		<a href="/explore">&lt;- Home</a>
 		<div class="module" <% if (category) { %>data-category="<%= category %>"<% } %>>
 			<h2>Data about "<%= prefLabel %>"</h2>
