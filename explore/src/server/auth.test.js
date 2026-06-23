@@ -177,6 +177,9 @@ test('middleware: valid JWT missing arachne:read → 403 access-denied page (not
 	const [view, locals] = res.render.mock.calls[0].arguments;
 	assert.equal(view, 'error');
 	assert.equal(locals.title, 'Access denied');
+	// hint must be absent/falsy — error.ejs uses `locals.hint` to guard the paragraph;
+	// passing a truthy hint here would show a misleading "try again" message on a 403.
+	assert.ok(!locals.hint, 'access-denied render must not pass a hint (would show misleading retry text)');
 });
 
 test('middleware: valid JWT with empty scopes → 403 access-denied page (no scope = no access)', async () => {
