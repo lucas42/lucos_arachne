@@ -630,7 +630,11 @@ app.use((error, req, res, next) => {
 	res.status(error.status || 500);
 	console.error(error.stack);
 	if (req.accepts('html')) {
-		res.render('error', {message: error.message});
+		res.render('error', {
+				title: 'Something went wrong',
+				message: error.message,
+				hint: 'Try going back and searching again. If the problem persists, search may be temporarily unavailable.',
+			});
 	} else {
 		res.json({errorMessage: error.message});
 	}
