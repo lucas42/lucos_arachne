@@ -59,8 +59,15 @@ export function parseCookies(header) {
  * Provide express middleware function for checking authentication.
  * Reads the aithne_session cookie, verifies the JWT locally via JWKS, and
  * checks for the arachne:read scope (ADR-0001 §6: scope-based access control).
- * Unauthenticated or unauthorised requests are redirected to the aithne login
- * page (re-authenticating may yield a fresh token once a grant is in place).
+ *
+ * Three outcomes:
+ *  1. Valid session with arachne:read  → calls next() (access granted)
+ *  2. Valid session, missing scope     → 403 access-denied page
+ *  3. No session / invalid token       → 302 redirect to aithne login
+ *
+ * Case 2 must NOT redirect to login: re-authenticating yields the same
+ * scopeless token, creating an infinite loop. The resource makes the
+ * authorisation decision (ADR-0001 §6); the login page does not.
  */
 export async function middleware(req, res, next) {
 	const cookies = parseCookies(req.headers.cookie);
@@ -78,15 +85,21 @@ export async function middleware(req, res, next) {
 				res.auth_agent = payload;
 				return next();
 			}
-			// JWT is valid but the principal lacks arachne:read. Redirecting to login
-			// gives them a fresh token if the scope was granted since their last auth.
+			// Valid session, but principal lacks arachne:read — show access-denied.
+			// Redirecting to login here causes an infinite loop: re-authenticating
+			// yields the same scopeless token. The user needs a grant, not a re-login.
 			console.warn('JWT missing required arachne:read scope:', payload.sub);
+			return res.status(403).render('error', {
+				title: 'Access denied',
+				message: "You're signed in but don't have access to arachne. Contact the administrator to request access.",
+			});
 		} catch (error) {
+			// Invalid or expired token — fall through to login redirect below.
 			console.error('JWT verification failed:', error.message);
 		}
 	}
 
-	// Not authenticated / not authorised — redirect to aithne login.
+	// No session cookie, or token failed verification — redirect to aithne login.
 	// req.protocol is populated from X-Forwarded-Proto by Express when trust proxy
 	// is set (configured in index.js), so this correctly returns 'https' in production.
 	// Preserve the existing /explore path-prefix so the user lands back on the
