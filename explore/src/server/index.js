@@ -13,6 +13,11 @@ const app = express();
 app.auth = authMiddleware;
 
 app.set('view engine', 'ejs');
+
+// Make AITHNE_ORIGIN available to all EJS templates as `aithneOrigin` — used by
+// the navbar's `aithne-origin` attribute to call the silent re-mint endpoint
+// (lucos_navbar >= 2.2.0, ADR-0003 §2).
+app.locals.aithneOrigin = process.env.AITHNE_ORIGIN ?? 'https://aithne.l42.eu';
 app.use(express.static('./resources', {extensions: ['json']}));
 
 // /_info is unauthenticated and must be registered before the auth middleware.
