@@ -1,7 +1,11 @@
 import { jwtVerify, createRemoteJWKSet } from 'jose';
 
 const AITHNE_ORIGIN = process.env.AITHNE_ORIGIN ?? 'https://aithne.l42.eu';
-const AITHNE_JWKS_URL = new URL(`${AITHNE_ORIGIN}/.well-known/jwks.json`);
+// AITHNE_JWKS_URL overrides only the server-side key fetch — never iss or login redirect.
+// Unset in production (AITHNE_ORIGIN is reachable from containers there).
+// In dev, bridge-network containers can't reach the browser-facing localhost address,
+// so this points the fetch at a container-reachable host instead.
+const AITHNE_JWKS_URL = new URL(process.env.AITHNE_JWKS_URL ?? `${AITHNE_ORIGIN}/.well-known/jwks.json`);
 const AITHNE_ISSUER = AITHNE_ORIGIN;
 const AITHNE_AUDIENCE = 'l42.eu';
 const AITHNE_LOGIN_URL = `${AITHNE_ORIGIN}/auth/login`;
