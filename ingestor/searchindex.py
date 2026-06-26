@@ -132,34 +132,49 @@ def graph_to_typesense_docs(graph: Graph):
 		# type
 		type_uri = None          # the rdf:type URI used (for subClassOf walk)
 		is_language_special_case = False
-		for o in graph.objects(subj, RDF.type):
-			if is_meta_type(str(o)):
-				continue
+		is_language_family = False
 
-			# If the type itself has a type of LanguageFamily, then the subject is a Language
-			if (o, RDF.type, EOLAS_NS.LanguageFamily) in graph:
-				doc["type"] = "Language"
-				doc["category"] = "Anthropological"
-				doc["lang_family"] = str(o).split('/')[-1]
-				is_language_special_case = True
-			else:
-				doc["type"] = get_label(graph, o)
-				type_uri = o
-				# Prefer subject-level eolas:hasCategory (e.g. PlaceType instances like Country
-				# carry their own per-instance category directly on the subject URI).  Fall back
-				# to type-level (e.g. Vehicle subjects inherit category from their TransportMode
-				# type, which has eolas:hasCategory on the type URI).
-				subject_cats = list(graph.objects(subj, EOLAS_NS.hasCategory))
-				if subject_cats:
-					doc["category"] = get_label(graph, subject_cats[0])
+		# LanguageFamily instances have rdf:type eolas:LanguageFamily directly.
+		# Handle them upfront before the general type loop so we can index them as
+		# "Language Family" entities without requiring the LanguageFamily metaclass
+		# label to be present in the graph (it's provided by eolas's ontology export,
+		# but we don't want to depend on that for correctness).
+		if (subj, RDF.type, EOLAS_NS.LanguageFamily) in graph:
+			doc["type"] = "Language Family"
+			doc["category"] = "Anthropological"
+			is_language_family = True
+		else:
+			for o in graph.objects(subj, RDF.type):
+				if is_meta_type(str(o)):
+					continue
+
+				# If the type itself has a type of LanguageFamily, then the subject is a Language.
+				# Use rstrip('/') before split to handle eolas URIs with trailing slashes
+				# (e.g. https://eolas.l42.eu/metadata/languagefamily/roa/ → "roa").
+				if (o, RDF.type, EOLAS_NS.LanguageFamily) in graph:
+					doc["type"] = "Language"
+					doc["category"] = "Anthropological"
+					doc["lang_family"] = str(o).rstrip('/').split('/')[-1]
+					is_language_special_case = True
 				else:
-					doc["category"] = get_category(graph, o)
-			break
+					doc["type"] = get_label(graph, o)
+					type_uri = o
+					# Prefer subject-level eolas:hasCategory (e.g. PlaceType instances like Country
+					# carry their own per-instance category directly on the subject URI).  Fall back
+					# to type-level (e.g. Vehicle subjects inherit category from their TransportMode
+					# type, which has eolas:hasCategory on the type URI).
+					subject_cats = list(graph.objects(subj, EOLAS_NS.hasCategory))
+					if subject_cats:
+						doc["category"] = get_label(graph, subject_cats[0])
+					else:
+						doc["category"] = get_category(graph, o)
+				break
 
 		# types: leaf label + deduplicated ancestor labels via rdfs:subClassOf walk.
-		# LanguageFamily special case: no subClassOf walk — types is just ["Language"].
+		# LanguageFamily and Language special cases: no subClassOf walk — types is just
+		# ["Language Family"] or ["Language"] respectively.
 		if doc["type"]:
-			if is_language_special_case:
+			if is_language_family or is_language_special_case:
 				doc["types"] = [doc["type"]]
 			else:
 				ancestor_labels = _collect_subclass_labels(graph, type_uri) if type_uri is not None else []
