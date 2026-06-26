@@ -1,6 +1,6 @@
 import { URL } from 'url';
 import webpack from 'webpack';
-import TerserPlugin from 'terser-webpack-plugin';
+import MinimizerPlugin from 'minimizer-webpack-plugin';
 import { hashElement } from 'folder-hash';
 export default async () => {
 	return {
@@ -26,8 +26,10 @@ export default async () => {
 			}),
 		],
 		optimization: {
-			// Stop the terser plugin messing with the banner plugin
-			minimizer: [new TerserPlugin({
+			// Stop the minimizer plugin messing with the banner plugin
+			// extractComments defaults to true in minimizer-webpack-plugin — keep false to avoid
+			// stripping banner comments that the service worker depends on for resource hashes
+			minimizer: [new MinimizerPlugin({
 				extractComments: false,
 			})],
 		},
