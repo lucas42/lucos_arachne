@@ -95,7 +95,7 @@ export async function middleware(req, res, next) {
 			console.warn('JWT missing required arachne:read scope:', payload.sub);
 			return res.status(403).render('error', {
 				title: 'Access denied',
-				message: "You're signed in but don't have access to arachne. Contact the administrator to request access.",
+				message: "This action requires the `arachne:read` scope. Contact the administrator to request access.",
 			});
 		} catch (error) {
 			// Invalid or expired token — fall through to login redirect below.
