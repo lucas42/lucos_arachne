@@ -883,7 +883,7 @@ def test_graph_to_typesense_docs_types_leaf_only_when_no_subclass():
 
 
 def test_graph_to_typesense_docs_types_language_family_single_element():
-    """LanguageFamily special-case: types == ['Language'], no further walk."""
+    """Language gets type=='Language' and lang_family code; the LanguageFamily instance is also indexed."""
     g = Graph()
     lang_uri = URIRef("https://eolas.l42.eu/metadata/language/fr/")
     family_uri = URIRef("http://id.loc.gov/vocabulary/iso639-5/roa")
@@ -892,10 +892,51 @@ def test_graph_to_typesense_docs_types_language_family_single_element():
     g.add((family_uri, RDF.type, EOLAS_NS.LanguageFamily))
     g.add((family_uri, SKOS.prefLabel, Literal("Romance languages")))
     docs = graph_to_typesense_docs(g)
+    assert len(docs) == 2
+
+    lang_doc = next(d for d in docs if d["id"] == str(lang_uri))
+    assert lang_doc["type"] == "Language"
+    assert lang_doc["types"] == ["Language"]
+    assert lang_doc["lang_family"] == "roa"
+
+    family_doc = next(d for d in docs if d["id"] == str(family_uri))
+    assert family_doc["type"] == "Language Family"
+    assert family_doc["types"] == ["Language Family"]
+    assert family_doc["category"] == "Anthropological"
+    assert family_doc["pref_label"] == "Romance languages"
+
+
+def test_graph_to_typesense_docs_language_eolas_family_uri_lang_family_code():
+    """lang_family is correctly extracted for eolas family URIs with trailing slashes."""
+    g = Graph()
+    lang_uri = URIRef("https://eolas.l42.eu/metadata/language/fr/")
+    # eolas LanguageFamily URIs have a trailing slash — split('/')[-1] would return ""
+    family_uri = URIRef("https://eolas.l42.eu/metadata/languagefamily/roa/")
+    g.add((lang_uri, RDF.type, family_uri))
+    g.add((lang_uri, SKOS.prefLabel, Literal("French")))
+    g.add((family_uri, RDF.type, EOLAS_NS.LanguageFamily))
+    g.add((family_uri, SKOS.prefLabel, Literal("Romance languages")))
+    docs = graph_to_typesense_docs(g)
+
+    lang_doc = next(d for d in docs if d["id"] == str(lang_uri))
+    assert lang_doc["lang_family"] == "roa"  # must be "roa", not ""
+
+
+def test_graph_to_typesense_docs_language_family_entity_indexed():
+    """LanguageFamily instances are indexed with type='Language Family' and types=['Language Family']."""
+    g = Graph()
+    family_uri = URIRef("https://eolas.l42.eu/metadata/languagefamily/roa/")
+    g.add((family_uri, RDF.type, EOLAS_NS.LanguageFamily))
+    g.add((family_uri, SKOS.prefLabel, Literal("Romance languages")))
+    docs = graph_to_typesense_docs(g)
     assert len(docs) == 1
     doc = docs[0]
-    assert doc["type"] == "Language"
-    assert doc["types"] == ["Language"]
+    assert doc["id"] == str(family_uri)
+    assert doc["type"] == "Language Family"
+    assert doc["types"] == ["Language Family"]
+    assert doc["category"] == "Anthropological"
+    assert doc["pref_label"] == "Romance languages"
+    assert doc["lang_family"] is None  # LanguageFamily entities don't have a lang_family themselves
 
 
 # ---------------------------------------------------------------------------
