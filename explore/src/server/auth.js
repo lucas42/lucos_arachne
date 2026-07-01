@@ -148,7 +148,9 @@ export async function middleware(req, res, next) {
 			});
 		} catch (error) {
 			// Invalid or expired token — fall through to login redirect below.
-			console.error('JWT verification failed:', error.message);
+			// Logged at warn, not error: expiry and rotation failures are expected noise,
+			// not application errors. Escalate to error only if JWKS infrastructure fails.
+			console.warn('JWT verification failed:', error.message);
 		}
 	}
 
