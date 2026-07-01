@@ -127,6 +127,7 @@ services:
       - APP_ORIGIN
       - ENVIRONMENT
       - AITHNE_ORIGIN
+      - AITHNE_JWKS_URL
     depends_on:
       triplestore:
         condition: service_healthy
