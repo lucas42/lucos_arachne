@@ -1,6 +1,6 @@
 import { test, mock } from 'node:test';
 import assert from 'node:assert/strict';
-import { middleware, parseCookies, hasArachneAccess, _setVerifier } from './auth.js';
+import { middleware, parseCookies, hasArachneAccess, _setVerifier, _createLKGJWKSet } from './auth.js';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -213,4 +213,66 @@ test('middleware: tampered JWT signature → redirects to aithne login (fail-clo
 	await middleware(req, res, next);
 	assert.equal(next.mock.calls.length, 0);
 	assert.equal(res.redirect.mock.calls.length, 1);
+});
+
+// ─── _createLKGJWKSet ─────────────────────────────────────────────────────────
+
+test('_createLKGJWKSet: returns key on success and caches it', async () => {
+	const fakeKey = Symbol('key');
+	const mockFetch = mock.fn(async () => fakeKey);
+	const lkgFn = _createLKGJWKSet(mockFetch);
+
+	const result = await lkgFn({}, 'token');
+
+	assert.equal(result, fakeKey, 'must return the key from the inner fetcher');
+	assert.equal(mockFetch.mock.calls.length, 1);
+});
+
+test('_createLKGJWKSet: returns last-known-good key on network error after warm cache', async () => {
+	const fakeKey = Symbol('cached-key');
+	let callCount = 0;
+	const mockFetch = mock.fn(async () => {
+		if (callCount++ === 0) return fakeKey;   // first call: success
+		throw new Error('fetch failed');           // subsequent calls: network error
+	});
+	const lkgFn = _createLKGJWKSet(mockFetch);
+
+	// Warm the cache
+	await lkgFn({}, 'token');
+
+	// Simulate network failure — should fall back to cached key
+	const result = await lkgFn({}, 'token2');
+
+	assert.equal(result, fakeKey, 'must return the last-known-good key on network failure');
+});
+
+test('_createLKGJWKSet: fails closed on network error with no cached key', async () => {
+	const mockFetch = mock.fn(async () => { throw new Error('fetch failed'); });
+	const lkgFn = _createLKGJWKSet(mockFetch);
+
+	await assert.rejects(
+		() => lkgFn({}, 'token'),
+		/fetch failed/,
+		'must propagate the error when no cached key is available',
+	);
+});
+
+test('_createLKGJWKSet: propagates ERR_JWKS_NO_MATCHING_KEY even with warm cache', async () => {
+	const fakeKey = Symbol('cached-key');
+	let callCount = 0;
+	const mockFetch = mock.fn(async () => {
+		if (callCount++ === 0) return fakeKey;
+		throw Object.assign(new Error('JWKSNoMatchingKey'), { code: 'ERR_JWKS_NO_MATCHING_KEY' });
+	});
+	const lkgFn = _createLKGJWKSet(mockFetch);
+
+	// Warm the cache
+	await lkgFn({}, 'token');
+
+	// Genuine key-miss must propagate, not fall back to the old key
+	await assert.rejects(
+		() => lkgFn({}, 'token2'),
+		(err) => err.code === 'ERR_JWKS_NO_MATCHING_KEY',
+		'must not fall back on ERR_JWKS_NO_MATCHING_KEY — kid is genuinely missing from JWKS',
+	);
 });

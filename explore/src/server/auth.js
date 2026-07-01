@@ -10,10 +10,59 @@ const AITHNE_ISSUER = AITHNE_ORIGIN;
 const AITHNE_AUDIENCE = 'l42.eu';
 const AITHNE_LOGIN_URL = `${AITHNE_ORIGIN}/auth/login`;
 
-// JWKS key set with automatic caching and kid-based rotation support.
-// jose's createRemoteJWKSet fetches on first use, caches for 5 minutes,
-// and re-fetches when a token's kid is not found in the cache.
-const JWKS = createRemoteJWKSet(AITHNE_JWKS_URL);
+/**
+ * Wrap a JWKS GetKeyFunction to serve the last-known-good key on network failure.
+ *
+ * Caches the most recently returned signing key and falls back to it when a
+ * transient network error prevents refreshing the JWKS endpoint. Cold-start
+ * (no cached key yet) fails closed — the error propagates normally.
+ *
+ * Does NOT fall back on ERR_JWKS_NO_MATCHING_KEY: that means the JWKS endpoint
+ * was reachable but the kid genuinely isn't there — a wrong-key fallback would
+ * just produce a signature mismatch, not a useful result.
+ *
+ * Mirrors the Python _LKGJWKSClient pattern used in lucos_backups / lucos_contacts.
+ * Per lucos_aithne#149 local-verification-contract §1.
+ *
+ * Exported with underscore prefix for unit testing only — do not call in production code.
+ *
+ * @param {Function} getRemoteKey - A GetKeyFunction returned by createRemoteJWKSet.
+ */
+export function _createLKGJWKSet(getRemoteKey) {
+	let _lastGoodKey = null;
+	return async function (protectedHeader, token) {
+		try {
+			const key = await getRemoteKey(protectedHeader, token);
+			_lastGoodKey = key;
+			return key;
+		} catch (err) {
+			// Genuine key-miss: the endpoint was reachable but the kid isn't in the JWKS.
+			// A wrong-key fallback won't help — propagate so the caller rejects the token.
+			if (err.code === 'ERR_JWKS_NO_MATCHING_KEY' || err.code === 'ERR_JWKS_MULTIPLE_MATCHING_KEYS') {
+				throw err;
+			}
+			// Network / timeout / parse failure: fall back to last-known-good if available.
+			if (_lastGoodKey === null) {
+				console.warn('JWKS fetch failed at cold start (no cached key — failing closed):', err.message);
+				throw err;
+			}
+			console.warn('JWKS fetch failed (using last-known-good):', err.message);
+			return _lastGoodKey;
+		}
+	};
+}
+
+// JWKS key set with LKG fallback wrapping automatic caching and kid-based rotation.
+// _createLKGJWKSet ensures that a brief JWKS blip during key rotation does not
+// reject already-valid sessions (tokens signed with the previously-cached key).
+let JWKS = _createLKGJWKSet(createRemoteJWKSet(AITHNE_JWKS_URL));
+
+/**
+ * Override the module-level JWKS GetKeyFunction. For testing only — do not call in production code.
+ */
+export function _setJWKS(fn) {
+	JWKS = fn;
+}
 
 // Internal verify function — replaced in tests via _setVerifier.
 let _verifyFn = (token, jwks, opts) => jwtVerify(token, jwks, opts);

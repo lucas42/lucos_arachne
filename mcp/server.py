@@ -8,6 +8,7 @@ import asyncio
 import logging
 import os
 import re
+import threading
 import time
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -17,7 +18,14 @@ from urllib.parse import urlparse
 import jwt
 import requests
 import uvicorn
-from jwt import PyJWKClient
+from jwt import PyJWKClient, PyJWKClientError
+
+# PyJWKClientNetworkError was added in PyJWT 2.4.0; fall back to the base class
+# so the except clause still catches network failures on older versions.
+try:
+    from jwt import PyJWKClientNetworkError
+except ImportError:
+    PyJWKClientNetworkError = PyJWKClientError
 from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
 from starlette.applications import Starlette
@@ -820,9 +828,54 @@ _AITHNE_JWKS_URL = f"{_AITHNE_ORIGIN}/.well-known/jwks.json"
 _AITHNE_ISSUER = _AITHNE_ORIGIN
 _AITHNE_AUDIENCE = "l42.eu"
 
-# JWKS client with 5-minute key cache. Fetches keys on first use and whenever
-# a token carries a kid not found in the cache (key rotation).
-_jwks_client = PyJWKClient(_AITHNE_JWKS_URL, cache_keys=True, lifespan=300)
+class _LKGJWKSClient:
+    """PyJWKClient wrapper that serves last-known-good keys on network failure.
+
+    Falls back to the last successfully fetched signing key when a transient
+    network error prevents refreshing the JWKS endpoint. Cold-start (no cached
+    key yet) fails closed — the token is rejected and the caller treats the
+    request as unauthenticated.
+
+    Per local-verification-contract.md §1 ("Serve last-known-good on a failed
+    refresh") and lucas42/lucos_aithne#149.
+    """
+
+    def __init__(self, uri):
+        self._client = PyJWKClient(uri, cache_keys=True, lifespan=300)
+        self._last_good_key = None
+        self._lock = threading.Lock()
+
+    def get_signing_key_from_jwt(self, token):
+        try:
+            key = self._client.get_signing_key_from_jwt(token)
+            with self._lock:
+                self._last_good_key = key
+            return key
+        except PyJWKClientNetworkError as exc:
+            with self._lock:
+                fallback = self._last_good_key
+            safe_msg = re.sub(r'[\x00-\x1f\x7f]', '', str(exc))
+            if fallback is None:
+                logger.warning(
+                    "JWKS fetch failed at cold start (no cached key — failing closed): %s",
+                    safe_msg,
+                )
+                raise
+            logger.warning("JWKS fetch failed (using last-known-good): %s", safe_msg)
+            return fallback
+        # Any other PyJWKClientError (e.g. kid not found after refresh) propagates.
+
+
+# Module-level JWKS client shared across all requests. _LKGJWKSClient wraps
+# PyJWKClient to serve the last-known-good key when the endpoint is transiently
+# unreachable (e.g. during a signing-key rotation coinciding with a brief blip).
+_jwks_client = _LKGJWKSClient(_AITHNE_JWKS_URL)
+
+
+def _set_jwks_client(client):
+    """Override the module-level JWKS client. For testing only — do not call in production."""
+    global _jwks_client
+    _jwks_client = client
 
 
 def _get_signing_key(token: str):
