@@ -1,5 +1,5 @@
 #! /usr/local/bin/python3
-import json, sys, os, traceback, threading
+import json, sys, os, time, traceback, threading
 from concurrent.futures import ThreadPoolExecutor
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from authorised_fetch import fetch_url
@@ -13,15 +13,19 @@ try:
 except ValueError:
 	sys.exit("\033[91mPORT isn't an integer\033[0m")
 
+_RECONCILE_MARKER = os.path.expanduser("~/last_successful_reconcile")
+
 _failed_ingestion_count = 0
+_last_failure_at = None   # float timestamp of most recent per-item failure, or None
 _counter_lock = threading.Lock()
 _executor = ThreadPoolExecutor(max_workers=10)
 
 
 def _increment_failure():
-	global _failed_ingestion_count
+	global _failed_ingestion_count, _last_failure_at
 	with _counter_lock:
 		_failed_ingestion_count += 1
+		_last_failure_at = time.time()
 
 
 def _process_event(event):
@@ -92,12 +96,38 @@ class WebhookHandler(BaseHTTPRequestHandler):
 		self.connection.close()
 
 	def infoController(self):
+		# Read the reconcile-marker mtime. A missing file (fresh container, before
+		# the first successful reconcile) is treated as epoch 0 so that a pre-first-
+		# reconcile failure reads red rather than green-by-absence.
+		try:
+			last_reconcile_mtime = os.path.getmtime(_RECONCILE_MARKER)
+		except OSError:
+			last_reconcile_mtime = 0
+
+		with _counter_lock:
+			last_failure = _last_failure_at
+			count = _failed_ingestion_count
+
+		# ok:false iff a per-item failure occurred after the last successful full
+		# reconcile. Clears automatically when the daily reconcile completes.
+		ingest_check_ok = last_failure is None or last_failure <= last_reconcile_mtime
+
 		body = json.dumps({
 			"system": os.environ.get("SYSTEM", "lucos_arachne_ingestor"),
-			"checks": {},
+			"checks": {
+				"failed_item_ingest": {
+					"ok": ingest_check_ok,
+					"techDetail": (
+						"ok:false if a per-item webhook ingest has failed since the last successful full reconcile. "
+						"Clears automatically once the daily reconcile completes (≤24h). "
+						"Green after reconcile means data healed, not bug fixed — the latent bug may still be live."
+					),
+					"failThreshold": 1,
+				},
+			},
 			"metrics": {
 				"failed_ingestion_count": {
-					"value": _failed_ingestion_count,
+					"value": count,
 					"techDetail": "Number of webhook events that failed to ingest since the last restart",
 				}
 			},

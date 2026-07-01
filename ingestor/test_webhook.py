@@ -164,8 +164,9 @@ def _make_info_request():
 
 @pytest.fixture(autouse=True)
 def reset_failure_counter():
-    """Reset the global failure counter before each test."""
+    """Reset the global failure state before each test."""
     _server_module._failed_ingestion_count = 0
+    _server_module._last_failure_at = None
     yield
 
 
@@ -435,6 +436,63 @@ def test_info_failed_ingestion_count_reflects_current_value():
     _server_module._failed_ingestion_count = 3
     _, data = _make_info_request()
     assert data["metrics"]["failed_ingestion_count"]["value"] == 3
+
+
+def test_info_checks_include_failed_item_ingest():
+    _, data = _make_info_request()
+    assert "failed_item_ingest" in data["checks"]
+    check = data["checks"]["failed_item_ingest"]
+    assert "ok" in check
+    assert "techDetail" in check
+    assert "failThreshold" in check
+
+
+def test_info_check_ok_when_no_failures():
+    """With no failures, failed_item_ingest check is ok:true regardless of marker file."""
+    _, data = _make_info_request()
+    assert data["checks"]["failed_item_ingest"]["ok"] is True
+
+
+def test_info_check_fails_when_failure_after_missing_marker():
+    """A failure with no marker file (epoch 0) means ok:false."""
+    with patch("server.os.path.getmtime", side_effect=OSError("no such file")):
+        _server_module._last_failure_at = 1000.0  # arbitrary past timestamp
+        _, data = _make_info_request()
+    assert data["checks"]["failed_item_ingest"]["ok"] is False
+
+
+def test_info_check_ok_when_reconcile_happened_after_failure():
+    """If reconcile mtime > failure timestamp, check is ok:true (data healed)."""
+    with patch("server.os.path.getmtime", return_value=2000.0):
+        _server_module._last_failure_at = 1000.0  # failure BEFORE reconcile
+        _, data = _make_info_request()
+    assert data["checks"]["failed_item_ingest"]["ok"] is True
+
+
+def test_info_check_fails_when_failure_after_reconcile():
+    """If failure timestamp > reconcile mtime, check is ok:false (still outstanding)."""
+    with patch("server.os.path.getmtime", return_value=1000.0):
+        _server_module._last_failure_at = 2000.0  # failure AFTER last reconcile
+        _, data = _make_info_request()
+    assert data["checks"]["failed_item_ingest"]["ok"] is False
+
+
+def test_failed_ingestion_sets_last_failure_at():
+    """_increment_failure() should set _last_failure_at to a non-None timestamp."""
+    import time as time_mod
+    before = time_mod.time()
+    _fetch_url_mock.side_effect = RuntimeError("upstream error")
+    try:
+        _make_request({
+            "type": "albumCreated",
+            "source": "lucos_eolas",
+            "url": "https://eolas.l42.eu/metadata/1",
+        })
+        after = time_mod.time()
+        assert _server_module._last_failure_at is not None
+        assert before <= _server_module._last_failure_at <= after
+    finally:
+        _fetch_url_mock.side_effect = None  # Don't bleed into subsequent tests
 
 
 # ---------------------------------------------------------------------------
