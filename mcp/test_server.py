@@ -11,6 +11,7 @@ import logging
 import time
 from unittest.mock import MagicMock, patch
 
+import jwt
 import pytest
 import requests
 from starlette.testclient import TestClient
@@ -1350,22 +1351,63 @@ def test_verify_aithne_agent_jwt_jwks_failure_log_includes_exception(caplog):
     )
 
 
-def test_verify_aithne_agent_jwt_token_validation_failure_returns_false_silently(caplog):
-    """A bad token (wrong signature, expired, etc.) returns False with no WARNING logged."""
+def test_verify_aithne_agent_jwt_token_validation_failure_returns_false_and_logs_warning(caplog):
+    """A bad token returns False and logs a WARNING.
+
+    JWT validation failures are expected noise for individual tokens, but must
+    be logged so that systemic misconfigurations (wrong issuer, signing key
+    rotation, etc.) are visible in logs — see lucos_arachne#699.
+    """
     mock_signing_key = MagicMock()
     mock_signing_key.key = "fake-key"
 
     with patch("server._jwks_client") as mock_client:
         mock_client.get_signing_key_from_jwt.return_value = mock_signing_key
         with patch("server.jwt.decode") as mock_decode:
-            mock_decode.side_effect = Exception("Signature verification failed")
+            mock_decode.side_effect = jwt.InvalidTokenError("Signature verification failed")
             with caplog.at_level(logging.WARNING, logger="server"):
                 result = _run(server._verify_aithne_agent_jwt("badtoken"))
 
     assert result is False
     warning_records = [r for r in caplog.records if r.levelno >= logging.WARNING]
-    assert len(warning_records) == 0, (
-        f"Expected no WARNING logs for token validation failure, got: {warning_records}"
+    assert len(warning_records) >= 1, (
+        "Expected at least one WARNING log for JWT validation failure"
+    )
+
+
+def test_verify_aithne_agent_jwt_expired_token_logs_specific_message(caplog):
+    """An expired token logs 'JWT rejected: token has expired'."""
+    mock_signing_key = MagicMock()
+    mock_signing_key.key = "fake-key"
+
+    with patch("server._jwks_client") as mock_client:
+        mock_client.get_signing_key_from_jwt.return_value = mock_signing_key
+        with patch("server.jwt.decode") as mock_decode:
+            mock_decode.side_effect = jwt.ExpiredSignatureError("Signature has expired")
+            with caplog.at_level(logging.WARNING, logger="server"):
+                result = _run(server._verify_aithne_agent_jwt("expiredtoken"))
+
+    assert result is False
+    assert any("token has expired" in r.message for r in caplog.records), (
+        "Expected 'token has expired' in WARNING log for ExpiredSignatureError"
+    )
+
+
+def test_verify_aithne_agent_jwt_wrong_issuer_logs_specific_message(caplog):
+    """A wrong-issuer token logs 'JWT rejected: wrong issuer'."""
+    mock_signing_key = MagicMock()
+    mock_signing_key.key = "fake-key"
+
+    with patch("server._jwks_client") as mock_client:
+        mock_client.get_signing_key_from_jwt.return_value = mock_signing_key
+        with patch("server.jwt.decode") as mock_decode:
+            mock_decode.side_effect = jwt.InvalidIssuerError("Invalid issuer")
+            with caplog.at_level(logging.WARNING, logger="server"):
+                result = _run(server._verify_aithne_agent_jwt("wrongissuertoken"))
+
+    assert result is False
+    assert any("wrong issuer" in r.message for r in caplog.records), (
+        "Expected 'wrong issuer' in WARNING log for InvalidIssuerError"
     )
 
 

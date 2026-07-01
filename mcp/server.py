@@ -942,8 +942,24 @@ async def _verify_aithne_agent_jwt(token: str) -> bool:
             leeway=30,  # 30-second clock-skew tolerance per local-verification-contract
         )
         return _has_arachne_access(payload.get("scopes", []))
-    except Exception:
-        # Token validation failure — expected for bad tokens, no log needed
+    except jwt.ExpiredSignatureError:
+        logger.warning("JWT rejected: token has expired")
+        return False
+    except jwt.InvalidIssuerError:
+        logger.warning("JWT rejected: wrong issuer (expected '%s')", _AITHNE_ISSUER)
+        return False
+    except jwt.InvalidAudienceError:
+        logger.warning("JWT rejected: wrong audience (expected '%s')", _AITHNE_AUDIENCE)
+        return False
+    except jwt.MissingRequiredClaimError as exc:
+        logger.warning("JWT rejected: missing required claim — %s", exc)
+        return False
+    except jwt.DecodeError as exc:
+        logger.warning("JWT rejected: decode error — %s", exc)
+        return False
+    except jwt.InvalidTokenError as exc:
+        # Catch-all for any other JWT validation failure (bad signature, etc.)
+        logger.warning("JWT rejected: %s — %s", type(exc).__name__, exc)
         return False
 
 
