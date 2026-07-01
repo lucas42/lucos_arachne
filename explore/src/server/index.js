@@ -1,5 +1,4 @@
 import express from 'express';
-import net from 'net';
 import rateLimit from 'express-rate-limit';
 import { middleware as authMiddleware } from './auth.js';
 import { processBindings, processPhaseACounts, processPhaseCBindings, bestLabelAcrossRows } from './processBindings.js';
@@ -66,24 +65,29 @@ async function checkSearch() {
 	}
 }
 
-function checkIngestor() {
-	const techDetail = 'TCP connect to ingestor:8099 to confirm the process is running';
-	const failThreshold = 3;
-	return new Promise((resolve) => {
-		const timeout = setTimeout(() => {
-			socket.destroy();
-			resolve({ ok: false, techDetail, failThreshold, debug: 'timeout' });
-		}, 450);
-		const socket = net.connect(8099, 'ingestor', () => {
-			clearTimeout(timeout);
-			socket.end();
-			resolve({ ok: true, techDetail, failThreshold });
+async function checkIngestor() {
+	// ok:false if the ingestor process is down OR a per-item webhook ingest has
+	// failed since the last successful full reconcile. The ingestor's own /_info
+	// carries the self-clearing check; we surface it here so monitoring can alert.
+	// Green after reconcile means data healed, not bug fixed.
+	const techDetail = 'GET http://ingestor:8099/_info — ok:false if the ingestor is down or a per-item ingest has failed since the last successful full reconcile (clears automatically on the next daily reconcile)';
+	const failThreshold = 1;
+	try {
+		const response = await fetch('http://ingestor:8099/_info', {
+			signal: AbortSignal.timeout(450),
 		});
-		socket.on('error', (err) => {
-			clearTimeout(timeout);
-			resolve({ ok: false, techDetail, failThreshold, debug: err.message });
-		});
-	});
+		if (!response.ok) {
+			return { ok: false, techDetail, failThreshold, debug: `HTTP ${response.status}` };
+		}
+		const data = await response.json();
+		const ingestCheck = data?.checks?.failed_item_ingest;
+		if (ingestCheck && !ingestCheck.ok) {
+			return { ok: false, techDetail, failThreshold };
+		}
+		return { ok: true, techDetail, failThreshold };
+	} catch (err) {
+		return { ok: false, techDetail, failThreshold, debug: err.message };
+	}
 }
 
 async function checkTriplestore() {

@@ -152,6 +152,14 @@ def run_ingest():
 	else:
 		cleanup_triplestore(all_graph_uris)
 		cleanup_searchindex(all_item_ids, all_track_ids)
+		# Touch the reconcile marker so server.py's health check knows the graph is
+		# fully healed. Only written here — in the clean, full-reconcile branch —
+		# never at the unconditional updateScheduleTracker(job_name="ingestor") call
+		# below, which fires even on partial reconciles and would clear the check
+		# prematurely while gaps remain.
+		reconcile_marker = os.path.expanduser("~/last_successful_reconcile")
+		with open(reconcile_marker, "a"):
+			os.utime(reconcile_marker, None)
 
 	if has_failures and not any_changed:
 		human_readable = "Knowledge graph ingest failed — no updates applied"
