@@ -1393,6 +1393,103 @@ def test_verify_aithne_agent_jwt_kid_control_chars_stripped_from_log(caplog):
 
 
 # ---------------------------------------------------------------------------
+# _LKGJWKSClient — last-known-good JWKS fallback
+# ---------------------------------------------------------------------------
+
+def _make_lkg_client_with_mock():
+    """Return a (_LKGJWKSClient, inner_mock, PyJWKClientNetworkError) triple.
+
+    Constructs the client with a mock inner PyJWKClient so tests can control
+    get_signing_key_from_jwt without making network calls.
+    """
+    import threading
+    from jwt import PyJWKClientError
+    try:
+        from jwt import PyJWKClientNetworkError as _NetErr
+    except ImportError:
+        _NetErr = PyJWKClientError
+
+    mock_inner = MagicMock()
+    client = server._LKGJWKSClient.__new__(server._LKGJWKSClient)
+    client._client = mock_inner
+    client._last_good_key = None
+    client._lock = threading.Lock()
+    return client, mock_inner, _NetErr
+
+
+def test_lkg_jwks_client_returns_key_on_success():
+    """A successful key fetch returns the key and stores it as last-known-good."""
+    client, mock_inner, _ = _make_lkg_client_with_mock()
+    fake_key = MagicMock(name="signing_key")
+    mock_inner.get_signing_key_from_jwt.return_value = fake_key
+
+    result = client.get_signing_key_from_jwt("sometoken")
+
+    assert result is fake_key
+    assert client._last_good_key is fake_key
+
+
+def test_lkg_jwks_client_returns_lkg_key_on_network_error_when_warm(caplog):
+    """A network error after a warm cache returns the last-known-good key."""
+    client, mock_inner, PyJWKClientNetworkError = _make_lkg_client_with_mock()
+    fake_key = MagicMock(name="cached_signing_key")
+    client._last_good_key = fake_key  # pre-warm the cache
+
+    mock_inner.get_signing_key_from_jwt.side_effect = PyJWKClientNetworkError("connection refused")
+
+    with caplog.at_level(logging.WARNING, logger="server"):
+        result = client.get_signing_key_from_jwt("sometoken")
+
+    assert result is fake_key, "Expected LKG key to be returned on network failure"
+    assert any("last-known-good" in r.message for r in caplog.records), (
+        "Expected a WARNING log mentioning 'last-known-good'"
+    )
+
+
+def test_lkg_jwks_client_raises_on_network_error_when_cold(caplog):
+    """A network error with no cached key (cold start) fails closed."""
+    client, mock_inner, PyJWKClientNetworkError = _make_lkg_client_with_mock()
+    # _last_good_key is None (cold start)
+    mock_inner.get_signing_key_from_jwt.side_effect = PyJWKClientNetworkError("DNS failure")
+
+    with caplog.at_level(logging.WARNING, logger="server"):
+        with pytest.raises(PyJWKClientNetworkError):
+            client.get_signing_key_from_jwt("sometoken")
+
+    assert any("cold start" in r.message for r in caplog.records), (
+        "Expected a WARNING log mentioning 'cold start'"
+    )
+
+
+def test_lkg_jwks_client_propagates_non_network_error():
+    """A non-network JWKS error (e.g. kid not found) propagates without LKG fallback.
+
+    Only meaningful when PyJWKClientNetworkError is a distinct class from PyJWKClientError
+    (PyJWT >= 2.4.0 with the specific export present). When the compat shim has equated the
+    two classes, all PyJWKClientErrors are treated as potential network failures — the correct
+    degraded-mode behaviour — and this test is a no-op (skipped).
+    """
+    from jwt import PyJWKClientError
+    try:
+        from jwt import PyJWKClientNetworkError
+    except ImportError:
+        pytest.skip("PyJWKClientNetworkError not available (compat shim active) — non-network distinction N/A")
+
+    if PyJWKClientNetworkError is PyJWKClientError:
+        pytest.skip("PyJWKClientNetworkError is PyJWKClientError (compat shim active) — non-network distinction N/A")
+
+    client, mock_inner, _ = _make_lkg_client_with_mock()
+    fake_key = MagicMock(name="cached_key")
+    client._last_good_key = fake_key  # warm cache, but error is not a network error
+
+    # PyJWKClientError (not PyJWKClientNetworkError) — e.g. kid not found after refresh
+    mock_inner.get_signing_key_from_jwt.side_effect = PyJWKClientError("kid not found")
+
+    with pytest.raises(PyJWKClientError):
+        client.get_signing_key_from_jwt("sometoken")
+
+
+# ---------------------------------------------------------------------------
 # BearerAuthMiddleware — CLIENT_KEYS rejection regression
 # ---------------------------------------------------------------------------
 
