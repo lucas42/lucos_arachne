@@ -824,7 +824,11 @@ def get_data_sources() -> str:
 
 
 _AITHNE_ORIGIN = os.environ.get("AITHNE_ORIGIN", "https://aithne.l42.eu")
-_AITHNE_JWKS_URL = f"{_AITHNE_ORIGIN}/.well-known/jwks.json"
+# AITHNE_JWKS_URL overrides only the server-side key fetch — never iss or login redirect.
+# Unset in production (AITHNE_ORIGIN is reachable from containers there).
+# In dev, bridge-network containers can't reach the browser-facing localhost address,
+# so this points the fetch at a container-reachable host instead (e.g. 172.17.0.1:8039).
+_AITHNE_JWKS_URL = os.environ.get("AITHNE_JWKS_URL") or f"{_AITHNE_ORIGIN}/.well-known/jwks.json"
 _AITHNE_ISSUER = _AITHNE_ORIGIN
 _AITHNE_AUDIENCE = "l42.eu"
 
