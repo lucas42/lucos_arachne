@@ -1049,10 +1049,11 @@ def test_compute_person_closures_two_linked_persons():
     )
     result = compute_person_closures(session, CONTACTS_GRAPH)
     assert len(result) == 1
-    primary, secondary, is_contact = result[0]
+    primary, secondary, is_contact, contact_uri = result[0]
     assert primary == EOLAS_URI
     assert secondary == [CONTACT_URI]
     assert is_contact is True
+    assert contact_uri == CONTACT_URI
 
 
 def test_compute_person_closures_no_pref_id_lexicographic_fallback():
@@ -1065,9 +1066,10 @@ def test_compute_person_closures_no_pref_id_lexicographic_fallback():
     )
     result = compute_person_closures(session, CONTACTS_GRAPH)
     assert len(result) == 1
-    primary, secondary, is_contact = result[0]
+    primary, secondary, is_contact, contact_uri = result[0]
     assert primary == min(CONTACT_URI, EOLAS_URI)
     assert is_contact is True
+    assert contact_uri == CONTACT_URI
 
 
 def test_compute_person_closures_chain_primary():
@@ -1083,10 +1085,11 @@ def test_compute_person_closures_chain_primary():
     )
     result = compute_person_closures(session, CONTACTS_GRAPH)
     assert len(result) == 1
-    primary, secondary, is_contact = result[0]
+    primary, secondary, is_contact, contact_uri = result[0]
     assert primary == c
     assert sorted(secondary) == sorted([a, b])
     assert is_contact is False
+    assert contact_uri is None
 
 
 def test_compute_person_closures_single_contact_no_sameAs():
@@ -1099,10 +1102,11 @@ def test_compute_person_closures_single_contact_no_sameAs():
     )
     result = compute_person_closures(session, CONTACTS_GRAPH)
     assert len(result) == 1
-    primary, secondary, is_contact = result[0]
+    primary, secondary, is_contact, contact_uri = result[0]
     assert primary == CONTACT_URI
     assert secondary == []
     assert is_contact is True
+    assert contact_uri == CONTACT_URI
 
 
 def test_compute_person_closures_no_contact_uri():
@@ -1115,8 +1119,27 @@ def test_compute_person_closures_no_contact_uri():
     )
     result = compute_person_closures(session, CONTACTS_GRAPH)
     assert len(result) == 1
-    _, _, is_contact = result[0]
+    _, _, is_contact, contact_uri = result[0]
     assert is_contact is False
+    assert contact_uri is None
+
+
+def test_compute_person_closures_two_contact_uris_lexicographic_min():
+    """Closure with two lucos_contacts URIs (data-quality anomaly: two contact records
+    erroneously sameAs-linked) → contact_uri is the deterministic lexicographic min."""
+    other_contact_uri = "https://contacts.l42.eu/people/2"
+    session = _make_session_for_closures(
+        persons=[CONTACT_URI, other_contact_uri, EOLAS_URI],
+        same_as_pairs=[(CONTACT_URI, EOLAS_URI), (other_contact_uri, EOLAS_URI)],
+        pref_id_pairs=[(CONTACT_URI, EOLAS_URI), (other_contact_uri, EOLAS_URI)],
+        contacts_subjects=[CONTACT_URI, other_contact_uri],
+    )
+    result = compute_person_closures(session, CONTACTS_GRAPH)
+    assert len(result) == 1
+    primary, secondary, is_contact, contact_uri = result[0]
+    assert primary == EOLAS_URI
+    assert is_contact is True
+    assert contact_uri == min(CONTACT_URI, other_contact_uri)
 
 
 def test_compute_person_closures_sameAs_symmetric():
@@ -1158,10 +1181,11 @@ def test_compute_person_closures_artist_linked_to_person():
     )
     result = compute_person_closures(session, CONTACTS_GRAPH)
     assert len(result) == 1
-    primary, secondary, is_contact = result[0]
+    primary, secondary, is_contact, contact_uri = result[0]
     assert primary == EOLAS_URI, "eolas Person URI must be primary via preferredIdentifier"
     assert secondary == [ARTIST_URI]
     assert is_contact is False
+    assert contact_uri is None
 
 
 def test_compute_person_closures_artist_lexicographic_fallback():
@@ -1175,7 +1199,7 @@ def test_compute_person_closures_artist_lexicographic_fallback():
     )
     result = compute_person_closures(session, CONTACTS_GRAPH)
     assert len(result) == 1
-    primary, secondary, _ = result[0]
+    primary, secondary, _, _ = result[0]
     # Lexicographic fallback: eolas.l42.eu < media-metadata.l42.eu
     assert primary == min(EOLAS_URI, ARTIST_URI)
     assert len(secondary) == 1
@@ -1193,7 +1217,7 @@ def test_compute_person_closures_standalone_artist_excluded():
     )
     result = compute_person_closures(session, CONTACTS_GRAPH)
     assert len(result) == 1  # only the Person closure
-    primary, secondary, _ = result[0]
+    primary, secondary, _, _ = result[0]
     assert primary == EOLAS_URI
     assert secondary == []
     # Artist URI must not appear anywhere
@@ -1213,7 +1237,7 @@ def test_compute_person_closures_artist_and_separate_person_two_closures():
     result = compute_person_closures(session, CONTACTS_GRAPH)
     assert len(result) == 2
     # One closure has 2 members (artist + person), the other is just other_person
-    sizes = sorted(1 + len(secondary) for _, secondary, _ in result)
+    sizes = sorted(1 + len(secondary) for _, secondary, _, _ in result)
     assert sizes == [1, 2], "Expected one 2-member closure and one 1-member closure"
 
 
@@ -1236,7 +1260,7 @@ def test_compute_person_closures_r3_bowie():
         "R3 violated: dual-role human must yield exactly one merged closure, not two. "
         "Got: " + str(result)
     )
-    primary, secondary, is_contact = result[0]
+    primary, secondary, is_contact, contact_uri = result[0]
     assert primary == bowie_person_uri, (
         "R3 violated: eolas Person URI must be the canonical primary (via preferredIdentifier)"
     )
@@ -1244,6 +1268,7 @@ def test_compute_person_closures_r3_bowie():
         "R3 violated: media artist URI must be a secondary in the merged closure"
     )
     assert is_contact is False
+    assert contact_uri is None
 
 
 # ---------------------------------------------------------------------------
@@ -1315,6 +1340,7 @@ def test_update_person_docs_upserts_merged_doc():
     assert doc["pref_label"] == "Alice"
     assert doc["secondary_uris"] == [CONTACT_URI]
     assert doc["is_contact"] is True
+    assert doc["contact_uri"] == CONTACT_URI
     assert EOLAS_URI in result
 
 
@@ -1455,6 +1481,7 @@ def test_update_person_docs_is_contact_false_for_eolas_only():
     docs_col = mock_ts.collections.__getitem__.return_value.documents
     doc = docs_col.import_.call_args[0][0][0]
     assert doc["is_contact"] is False
+    assert doc["contact_uri"] is None
 
 
 def test_update_person_docs_artist_person_merge():
