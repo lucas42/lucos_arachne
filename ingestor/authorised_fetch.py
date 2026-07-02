@@ -1,6 +1,7 @@
-import os, sys, re
+import os, re
 import requests
 from urllib.parse import urlparse
+from aithne import get_aithne_token
 
 session = requests.Session()
 session.headers.update({
@@ -29,19 +30,20 @@ def _is_trusted_host(url: str) -> bool:
 
 def fetch_url(system, url):
 	def _build_auth_header(target_url: str) -> dict:
-		"""Return an auth header dict for target_url, or {} if credentials must not be sent."""
+		"""Return an auth header dict for target_url, or {} if credentials must not be sent.
+
+		For trusted lucos services, mints an aithne JWT via the client_credentials
+		grant and uses it as the Bearer token.  Raises RuntimeError (propagated to
+		the caller as an ingest failure) if token minting fails — never sends a
+		non-JWT value that the remote service would have to reject.
+		"""
 		if not system.startswith("lucos_"):
 			return {}
 		if not _is_trusted_host(target_url):
 			print(f"Skipping auth header for untrusted host: {urlparse(target_url).hostname}")
 			return {}
-		key_var = f"KEY_{system.upper()}"
-		key = os.environ.get(key_var)
-		if not key:
-			sys.exit(
-				f"No {key_var} environment variable found — won't be able to authenticate against ingestion endpoint {target_url}"
-			)
-		return {"Authorization": f"Bearer {key}"}
+		token = get_aithne_token()
+		return {"Authorization": f"Bearer {token}"}
 
 	# In dev environment, where URLs can be referencing localhost, switch domain to the docker internal domain to allow requests between containers
 	def map_localhost(url) -> str:

@@ -10,6 +10,8 @@ import pytest
 import authorised_fetch as _af_module
 from authorised_fetch import _is_trusted_host, fetch_url
 
+_FAKE_JWT = "header.payload.signature"
+
 
 # ---------------------------------------------------------------------------
 # _is_trusted_host
@@ -70,24 +72,26 @@ def _mock_response(content_type="text/turtle", text="<> a <> .", status=200, is_
 
 
 @pytest.fixture(autouse=True)
-def set_key_env(monkeypatch):
-    monkeypatch.setenv("KEY_LUCOS_EOLAS", "test-secret-key")
+def mock_aithne_token(monkeypatch):
+    """Replace get_aithne_token with a stub that returns a fake JWT."""
     monkeypatch.setenv("SYSTEM", "lucos_arachne")
+    with patch.object(_af_module, "get_aithne_token", return_value=_FAKE_JWT):
+        yield
 
 
 class TestFetchUrlAuthHeader:
 
     def test_auth_sent_to_trusted_lucos_host(self):
-        """Bearer token MUST be sent when fetching from a lucos production endpoint."""
+        """Bearer JWT MUST be sent when fetching from a lucos production endpoint."""
         mock_resp = _mock_response()
         with patch.object(_af_module, "session") as mock_session:
             mock_session.get.return_value = mock_resp
             fetch_url("lucos_eolas", "https://eolas.l42.eu/metadata/1")
         args, kwargs = mock_session.get.call_args
-        assert kwargs["headers"].get("Authorization") == "Bearer test-secret-key"
+        assert kwargs["headers"].get("Authorization") == f"Bearer {_FAKE_JWT}"
 
     def test_auth_not_sent_to_external_host(self):
-        """Bearer token MUST NOT be sent when the URL resolves to a non-lucos host."""
+        """Bearer JWT MUST NOT be sent when the URL resolves to a non-lucos host."""
         mock_resp = _mock_response()
         with patch.object(_af_module, "session") as mock_session:
             mock_session.get.return_value = mock_resp
@@ -96,14 +100,14 @@ class TestFetchUrlAuthHeader:
         assert "Authorization" not in kwargs["headers"]
 
     def test_auth_sent_to_localhost(self):
-        """Bearer token MUST be sent to localhost (dev environment)."""
+        """Bearer JWT MUST be sent to localhost (dev environment)."""
         mock_resp = _mock_response()
         with patch.object(_af_module, "session") as mock_session:
             mock_session.get.return_value = mock_resp
             # localhost gets rewritten to host.docker.internal by map_localhost
             fetch_url("lucos_eolas", "http://localhost:8032/metadata/1")
         args, kwargs = mock_session.get.call_args
-        assert kwargs["headers"].get("Authorization") == "Bearer test-secret-key"
+        assert kwargs["headers"].get("Authorization") == f"Bearer {_FAKE_JWT}"
 
     def test_no_auth_for_non_lucos_system(self):
         """No auth header for systems not prefixed lucos_."""
@@ -113,6 +117,13 @@ class TestFetchUrlAuthHeader:
             fetch_url("external_system", "https://eolas.l42.eu/metadata/1")
         args, kwargs = mock_session.get.call_args
         assert "Authorization" not in kwargs["headers"]
+
+    def test_auth_failure_propagates_as_exception(self):
+        """If get_aithne_token() raises, fetch_url must propagate the error."""
+        from unittest.mock import patch as _patch
+        with _patch.object(_af_module, "get_aithne_token", side_effect=RuntimeError("mint failed")):
+            with pytest.raises(RuntimeError, match="mint failed"):
+                fetch_url("lucos_eolas", "https://eolas.l42.eu/metadata/1")
 
 
 class TestFetchUrlRedirectAuth:
@@ -139,7 +150,7 @@ class TestFetchUrlRedirectAuth:
         args1, kwargs1 = mock_session.get.call_args_list[1]
 
         # First call (to lucos host): has auth
-        assert kwargs0["headers"].get("Authorization") == "Bearer test-secret-key"
+        assert kwargs0["headers"].get("Authorization") == f"Bearer {_FAKE_JWT}"
         # Redirect call (to id.loc.gov): no auth
         assert "Authorization" not in kwargs1["headers"]
 
@@ -157,4 +168,4 @@ class TestFetchUrlRedirectAuth:
             fetch_url("lucos_eolas", "https://eolas.l42.eu/metadata/1")
 
         args1, kwargs1 = mock_session.get.call_args_list[1]
-        assert kwargs1["headers"].get("Authorization") == "Bearer test-secret-key"
+        assert kwargs1["headers"].get("Authorization") == f"Bearer {_FAKE_JWT}"
