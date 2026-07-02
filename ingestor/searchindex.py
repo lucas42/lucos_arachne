@@ -445,8 +445,15 @@ def compute_person_closures(session, contacts_graph_uri: str) -> list:
 	  - the primary URI (via preferredIdentifier walk, or lexicographic fallback)
 	  - the secondary URIs (rest of the closure)
 	  - whether any URI in the closure is from lucos_contacts (is_contact)
+	  - the lucos_contacts URI for the closure, if any (contact_uri)
 
-	Returns a list of (primary_uri, secondary_uris_sorted_list, is_contact) tuples.
+	Returns a list of (primary_uri, secondary_uris_sorted_list, is_contact, contact_uri)
+	tuples. contact_uri is None when is_contact is False; the two are derived from the
+	same intersection so they can never disagree. When a closure contains more than one
+	lucos_contacts URI (two contact records erroneously sameAs-linked), the lexicographic
+	min is picked — deterministic, consistent with the primary-URI fallback above — and a
+	warning is printed.
+
 	Single-URI Persons (no sameAs links) are included as single-element closures.
 
 	mo:MusicArtist URIs are included when they have at least one owl:sameAs link to a
@@ -560,8 +567,20 @@ def compute_person_closures(session, contacts_graph_uri: str) -> list:
 	for component in closures:
 		primary = _find_primary_uri(component, pref_id_pairs)
 		secondary = sorted(component - {primary})
-		is_contact = bool(component & contacts_uris)
-		result.append((primary, secondary, is_contact))
+		component_contacts_uris = component & contacts_uris
+		is_contact = bool(component_contacts_uris)
+		contact_uri = None
+		if component_contacts_uris:
+			contact_uri = min(component_contacts_uris)
+			if len(component_contacts_uris) > 1:
+				print(
+					f"Warning: Person closure with primary <{primary}> has "
+					f"{len(component_contacts_uris)} lucos_contacts URIs "
+					f"({sorted(component_contacts_uris)}) — picking lexicographic "
+					f"min <{contact_uri}> as contact_uri",
+					flush=True,
+				)
+		result.append((primary, secondary, is_contact, contact_uri))
 	return result
 
 
@@ -665,6 +684,7 @@ def update_person_docs_in_searchindex(session, contacts_graph_uri: str) -> set:
 	  - labels: all foaf:name / rdfs:label values across the closure
 	  - secondary_uris: sorted list of non-primary URIs in the closure
 	  - is_contact: True iff any URI in the closure was fetched from lucos_contacts
+	  - contact_uri: the lucos_contacts URI for the closure, or None if is_contact is False
 	"""
 	closures = compute_person_closures(session, contacts_graph_uri)
 	if not closures:
@@ -682,14 +702,14 @@ def update_person_docs_in_searchindex(session, contacts_graph_uri: str) -> set:
 		return set()
 
 	# Query labels for all Person URIs in one batch
-	all_uris = {uri for primary, secondary, _ in closures for uri in [primary] + secondary}
+	all_uris = {uri for primary, secondary, _, _ in closures for uri in [primary] + secondary}
 	labels_by_uri = _query_person_labels_batch(session, all_uris)
 
 	docs_to_upsert = []
 	primary_ids = set()
 	secondary_ids = set()
 
-	for primary, secondary, is_contact in closures:
+	for primary, secondary, is_contact, contact_uri in closures:
 		# Determine pref_label: prefer primary's skos:prefLabel, fall back to any foaf:name in closure
 		pref_label = labels_by_uri.get(primary, {}).get("pref_label")
 		if pref_label is None:
@@ -723,6 +743,7 @@ def update_person_docs_in_searchindex(session, contacts_graph_uri: str) -> set:
 			"labels": all_names,
 			"secondary_uris": secondary,
 			"is_contact": is_contact,
+			"contact_uri": contact_uri,
 			"origin": f"{_parsed_primary.scheme}://{_parsed_primary.netloc}" if _parsed_primary.netloc else None,
 		}
 		docs_to_upsert.append(doc)

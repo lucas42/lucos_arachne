@@ -154,6 +154,18 @@ if echo "$ITEMS_COLLECTION_JSON" | grep -q '"name":"items"'; then
 			--silent --show-error --fail-with-body
 		echo "  Field 'origin' added."
 	fi
+	# contact_uri: lucos_contacts URI for the closure, when is_contact is true (lucos_arachne#712)
+	if echo "$EXISTING_FIELDS" | grep -q "^contact_uri$"; then
+		echo "  Field 'contact_uri' already present."
+	else
+		echo "  Adding missing field 'contact_uri'..."
+		curl -X PATCH "${TYPESENSE_URL}/collections/items" \
+			-H "X-TYPESENSE-API-KEY: ${TYPESENSE_ADMIN_KEY}" \
+			-H "Content-Type: application/json" \
+			-d '{"fields": [{"name": "contact_uri", "type": "string", "optional": true}]}' \
+			--silent --show-error --fail-with-body
+		echo "  Field 'contact_uri' added."
+	fi
 else
 	echo "Creating 'items' collection..."
 	curl -X POST "${TYPESENSE_URL}/collections" \
@@ -174,7 +186,8 @@ else
 				{"name": "secondary_uris", "type": "string[]", "optional": true},
 				{"name": "is_contact", "type": "bool", "optional": true},
 				{"name": "types", "type": "string[]", "facet": true, "optional": true},
-				{"name": "origin", "type": "string", "facet": true, "optional": true}
+				{"name": "origin", "type": "string", "facet": true, "optional": true},
+				{"name": "contact_uri", "type": "string", "optional": true}
 			],
 			"default_sorting_field":"pref_label"
 		}' --silent --show-error --fail-with-body
