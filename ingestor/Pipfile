@@ -8,7 +8,7 @@ requests = "*"
 rdflib = "*"
 typesense = "*"
 lucos-loganne-pythonclient = "*"
-lucos-schedule-tracker-pythonclient = ">=2.0.5"
+lucos-schedule-tracker-pythonclient = ">=2.0.6"
 
 [dev-packages]
 
