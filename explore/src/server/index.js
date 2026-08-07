@@ -33,10 +33,16 @@ app.get('/_info', catchErrors(async (req, res) => {
 			techDetail: 'Wall-clock time in ms for a SELECT COUNT(*) query against the arachne SPARQL endpoint',
 		};
 	}
+	if (searchResult.latencyMs !== null) {
+		metrics['search-latency-ms'] = {
+			value: searchResult.latencyMs,
+			techDetail: 'Wall-clock time in ms for a GET /collections/items probe against the Typesense search backend',
+		};
+	}
 	res.json({
 		system: 'lucos_arachne',
 		checks: {
-			search: searchResult,
+			search: searchResult.check,
 			ingestor: ingestorResult,
 			triplestore: triplestoreResult,
 			'sparql-latency': sparqlLatencyResult.check,
@@ -53,15 +59,23 @@ app.get('/_info', catchErrors(async (req, res) => {
 async function checkSearch() {
 	const techDetail = 'GET /collections/items to confirm Typesense is up and the items collection exists';
 	const failThreshold = 3;
+	const WARN_MS = 450;
+	const start = Date.now();
 	try {
 		const response = await fetch('http://search:8108/collections/items', {
 			headers: { 'X-TYPESENSE-API-KEY': process.env.KEY_LUCOS_ARACHNE },
-			signal: AbortSignal.timeout(450),
+			// Backstop only — WARN_MS decides ok, so a slow probe is measured rather than aborted.
+			signal: AbortSignal.timeout(800),
 		});
-		if (!response.ok) return { ok: false, techDetail, failThreshold, debug: `HTTP ${response.status}` };
-		return { ok: true, techDetail, failThreshold };
+		const latencyMs = Date.now() - start;
+		if (!response.ok) return { check: { ok: false, techDetail, failThreshold, debug: `HTTP ${response.status}` }, latencyMs: null };
+		const ok = latencyMs < WARN_MS;
+		return {
+			check: { ok, techDetail, failThreshold, ...(ok ? {} : { debug: `${latencyMs}ms` }) },
+			latencyMs,
+		};
 	} catch (err) {
-		return { ok: false, techDetail, failThreshold, debug: err.message };
+		return { check: { ok: false, techDetail, failThreshold, debug: err.message }, latencyMs: null };
 	}
 }
 
