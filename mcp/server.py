@@ -26,7 +26,7 @@ try:
     from jwt import PyJWKClientNetworkError
 except ImportError:
     PyJWKClientNetworkError = PyJWKClientError
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer
 from mcp.server.transport_security import TransportSecuritySettings
 from starlette.applications import Starlette
 from starlette.middleware import Middleware
@@ -66,7 +66,7 @@ SYSTEMS_TO_GRAPHS = {
 }
 
 # The MCP server must bind on all interfaces so nginx can proxy to it.
-# FastMCP defaults to 127.0.0.1 (localhost-only), which breaks container networking.
+# MCPServer defaults to 127.0.0.1 (localhost-only), which breaks container networking.
 PORT = int(os.environ.get("PORT", "8200"))
 
 TYPESENSE_URL = "http://search:8108"
@@ -81,7 +81,7 @@ _BUDGET_RESOLVE_S = 5   # cheap LIMIT-1 resolver queries
 _BUDGET_QUERY_S = 10    # main per-tool queries
 _BUDGET_HEALTH_S = 3    # trivial health probe
 
-# FastMCP's DNS rebinding protection defaults to localhost-only allowed hosts.
+# MCPServer's DNS rebinding protection defaults to localhost-only allowed hosts.
 # Add the service's public hostname so external clients can reach /mcp.
 _allowed_hosts = ["127.0.0.1:*", "localhost:*", "[::1]:*"]
 _app_origin = os.environ.get("APP_ORIGIN", "")
@@ -90,18 +90,13 @@ if _app_origin:
     if _hostname:
         _allowed_hosts.append(_hostname)
 
-mcp = FastMCP(
+mcp = MCPServer(
     name="lucos_arachne",
     instructions=(
         "This server provides structured access to the lucos_arachne knowledge graph. "
         "It queries the Fuseki triplestore (OWL-inferred arachne endpoint) and the "
         "Typesense full-text search index. Use the available tools to explore entities, "
         "types, and relationships in the knowledge graph."
-    ),
-    stateless_http=True,
-    transport_security=TransportSecuritySettings(
-        enable_dns_rebinding_protection=True,
-        allowed_hosts=_allowed_hosts,
     ),
 )
 
@@ -1140,7 +1135,13 @@ async def info(request):
     })
 
 
-mcp_asgi_app = mcp.streamable_http_app()
+mcp_asgi_app = mcp.streamable_http_app(
+    stateless_http=True,
+    transport_security=TransportSecuritySettings(
+        enable_dns_rebinding_protection=True,
+        allowed_hosts=_allowed_hosts,
+    ),
+)
 
 
 @asynccontextmanager
