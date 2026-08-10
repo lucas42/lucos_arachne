@@ -1,7 +1,7 @@
 {
     "_meta": {
         "hash": {
-            "sha256": "f0a34270cbefaa2fe10ca983222225757c0275278b310b3108a1ebe99267f09f"
+            "sha256": "daf8029f2883f0d780e7b92c5dee85e0004b9507cbf2984778ac8cce68c5e696"
         },
         "pipfile-spec": 6,
         "requires": {},
@@ -173,12 +173,12 @@
         },
         "lucos-schedule-tracker-pythonclient": {
             "hashes": [
-                "sha256:1941c46c94bfb86da5b92ad4fa82ef76303f81c86649e8a3f0238cf1a43286b8",
-                "sha256:c83172ec25385bce1de833fec783b1c97d78ec60205c65254fc90162aec0624b"
+                "sha256:a0a1f321b5e37e39fda569ca9aea88435558b4966daacfab9b3b5804a191fb0b",
+                "sha256:a65bab7ebe7085f39e2fa118f632e7f1381a5ce26ff6f94bc47b65e1b675dc17"
             ],
             "index": "pypi",
             "markers": "python_version >= '3.8'",
-            "version": "==2.0.8"
+            "version": "==2.0.9"
         },
         "pyparsing": {
             "hashes": [
