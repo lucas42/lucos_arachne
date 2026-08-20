@@ -12,8 +12,12 @@ RUN set -e; \
         arm64) sha1sum="639ab81a72771990790df7ee87d9acfe88e5fa83" ;; \
         *) echo "Unsupported architecture: $TARGETARCH" >&2; exit 1 ;; \
     esac; \
-    wget -qO /usr/local/bin/supercronic \
-        "https://github.com/aptible/supercronic/releases/download/v0.2.46/supercronic-linux-${TARGETARCH}"; \
+    for attempt in 1 2 3 4 5; do \
+        wget -qO /usr/local/bin/supercronic -T 30 \
+            "https://github.com/aptible/supercronic/releases/download/v0.2.46/supercronic-linux-${TARGETARCH}" && break; \
+        echo "supercronic download attempt ${attempt} failed; retrying" >&2; \
+        sleep $((attempt * 5)); \
+    done; \
     echo "${sha1sum}  /usr/local/bin/supercronic" | sha1sum -c -; \
     chmod +x /usr/local/bin/supercronic
 
