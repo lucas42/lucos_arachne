@@ -32,6 +32,7 @@
     "webpack-cli": "^7.2.3"
   },
   "overrides": {
+    "decode-uri-component": ">=0.5.0",
     "dompurify": ">=3.3.2",
     "folder-hash": {
       "minimatch": "^7.4.7"
