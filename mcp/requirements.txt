@@ -1,4 +1,4 @@
 mcp[cli]==2.2.0
-uvicorn==0.52.4
+uvicorn==0.53.0
 requests==2.34.2
 PyJWT==2.14.0
