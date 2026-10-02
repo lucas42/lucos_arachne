@@ -1582,3 +1582,33 @@ def test_query_person_type_category_returns_none_when_only_non_english():
     type_label, cat_label = _query_person_type_category(session)
     assert type_label is None
     assert cat_label is None
+
+
+# --- get_searchindex_ids ---
+
+_ID_TEST_TTL = """
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix skos: <http://www.w3.org/2004/02/skos/core#> .
+@prefix eolas: <https://eolas.l42.eu/ontology/> .
+<http://example.com/Thing> skos:prefLabel "Thing" ; eolas:hasCategory <http://example.com/Cat> .
+<http://example.com/Cat> skos:prefLabel "Category" .
+<http://example.com/thing1> a <http://example.com/Thing> ; skos:prefLabel "Thing one" .
+<http://example.com/thing2> a <http://example.com/Thing> ; skos:prefLabel "Thing two" .
+"""
+
+
+def test_get_searchindex_ids_matches_update_searchindex_without_upserting():
+    """IDs from get_searchindex_ids equal those update_searchindex upserts, and nothing is written."""
+    with patch.object(searchindex, "typesense_client") as client:
+        client.collections["items"].documents.import_.return_value = [{"success": True}] * 10
+        client.collections["tracks"].documents.import_.return_value = [{"success": True}] * 10
+        upserted = searchindex.update_searchindex("lucos_test", _ID_TEST_TTL, "text/turtle")
+        client.reset_mock()
+        ids = searchindex.get_searchindex_ids("lucos_test", _ID_TEST_TTL, "text/turtle")
+        assert client.mock_calls == []
+    assert ids == upserted
+    assert len(ids[0]) > 0
+
+
+def test_get_searchindex_ids_empty_for_non_lucos_system():
+    assert searchindex.get_searchindex_ids("other_system", _ID_TEST_TTL, "text/turtle") == (set(), set())
