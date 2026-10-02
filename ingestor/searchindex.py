@@ -794,18 +794,30 @@ typesense_client = typesense.Client({
 })
 
 
+def _build_docs(system, content, content_type):
+	"""Returns (item_docs, track_docs) that the given system's RDF content produces."""
+	if not system.startswith("lucos_"):
+		return ([], [])
+	g = Graph()
+	g.parse(data=content, format=content_type)
+	return (graph_to_typesense_docs(g), graph_to_track_docs(g))
+
+def get_searchindex_ids(system, content, content_type):
+	"""
+	Returns (item_ids, track_ids) that update_searchindex would upsert for this content,
+	without upserting. Used for hash-skipped sources so cleanup doesn't treat them as stale.
+	"""
+	(docs, track_docs) = _build_docs(system, content, content_type)
+	return ({doc["id"] for doc in docs}, {doc["id"] for doc in track_docs})
+
 def update_searchindex(system, content, content_type):
 	"""
 	Upserts documents into the search index from the given system's RDF content.
 	Returns a tuple of (item_ids, track_ids) that were upserted.
 	"""
-	if not system.startswith("lucos_"):
-		return (set(), set())
-	g = Graph()
-	g.parse(data=content, format=content_type)
+	(docs, track_docs) = _build_docs(system, content, content_type)
 
 	item_ids = set()
-	docs = graph_to_typesense_docs(g)
 	if len(docs) == 0:
 		print(f"No docs updated in search index, from {system}", flush=True)
 	else:
@@ -818,7 +830,6 @@ def update_searchindex(system, content, content_type):
 
 	# Upsert into tracks collection for track-type subjects
 	track_ids = set()
-	track_docs = graph_to_track_docs(g)
 	if len(track_docs) > 0:
 		track_results = typesense_client.collections["tracks"].documents.import_(track_docs, {"action": "upsert"})
 		for result in track_results:

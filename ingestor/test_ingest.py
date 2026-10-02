@@ -35,6 +35,7 @@ _replace_graph_mock = MagicMock()
 _diff_graph_mock = MagicMock(return_value=_DIFF_FRAGMENT_STUB)
 _execute_sparql_update_mock = MagicMock()
 _update_searchindex_mock = MagicMock(return_value=(set(), set()))
+_get_searchindex_ids_mock = MagicMock(return_value=(set(), set()))
 _update_person_docs_mock = MagicMock(return_value=set())
 _cleanup_triplestore_mock = MagicMock()
 _cleanup_searchindex_mock = MagicMock()
@@ -68,6 +69,7 @@ for mod_name, attrs in [
         "searchindex",
         {
             "update_searchindex": _update_searchindex_mock,
+            "get_searchindex_ids": _get_searchindex_ids_mock,
             "cleanup_searchindex": _cleanup_searchindex_mock,
             "update_person_docs_in_searchindex": _update_person_docs_mock,
         },
@@ -91,7 +93,8 @@ for _mod_name in _stub_mod_names:
 def _reset_mocks():
     for m in [
         _fetch_url_mock, _replace_graph_mock, _diff_graph_mock,
-        _execute_sparql_update_mock, _update_searchindex_mock, _update_person_docs_mock,
+        _execute_sparql_update_mock, _update_searchindex_mock, _get_searchindex_ids_mock,
+        _update_person_docs_mock,
         _cleanup_triplestore_mock, _cleanup_searchindex_mock,
         _compute_inferences_mock, _get_source_hash_mock, _set_source_hash_mock,
         _update_loganne_mock, _update_schedule_tracker_mock,
@@ -99,6 +102,7 @@ def _reset_mocks():
         m.reset_mock(side_effect=True, return_value=True)
     _fetch_url_mock.return_value = (_CONTENT, _CONTENT_TYPE)
     _update_searchindex_mock.return_value = (set(), set())
+    _get_searchindex_ids_mock.return_value = (set(), set())
     _update_person_docs_mock.return_value = set()
     _get_source_hash_mock.return_value = None
     _diff_graph_mock.return_value = _DIFF_FRAGMENT_STUB
@@ -143,6 +147,26 @@ def test_hash_match_skips_set_source_hash():
     _get_source_hash_mock.return_value = _expected_hash(_CONTENT, _CONTENT_TYPE)
     ingest.run_ingest()
     _set_source_hash_mock.assert_not_called()
+
+
+def test_hash_match_keeps_skipped_source_ids_out_of_cleanup():
+    """A hash-skipped source's doc IDs still reach cleanup_searchindex, so they aren't deleted as stale."""
+    _reset_mocks()
+    other_url = "https://media-api.example.com/v2/export"
+    changed_content = "<rdf> changed </rdf>"
+    unchanged_hash = _expected_hash(_CONTENT, _CONTENT_TYPE)
+    _fetch_url_mock.side_effect = lambda system, url: (
+        (_CONTENT, _CONTENT_TYPE) if system == "lucos_media_metadata_api" else (changed_content, _CONTENT_TYPE)
+    )
+    _get_source_hash_mock.side_effect = lambda url: unchanged_hash if url == other_url else None
+    _update_searchindex_mock.return_value = ({"eolas-1"}, set())
+    _get_searchindex_ids_mock.return_value = ({"media-1", "media-2"}, {"track-1"})
+    with patch.dict(ingest.live_systems, {"lucos_media_metadata_api": other_url}):
+        ingest.run_ingest()
+    _get_searchindex_ids_mock.assert_called_once_with("lucos_media_metadata_api", _CONTENT, _CONTENT_TYPE)
+    item_ids, track_ids = _cleanup_searchindex_mock.call_args.args
+    assert item_ids == {"eolas-1", "media-1", "media-2"}
+    assert track_ids == {"track-1"}
 
 
 # ---------------------------------------------------------------------------

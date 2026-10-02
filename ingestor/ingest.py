@@ -10,7 +10,7 @@ from triplestore import (
     get_source_hash, set_source_hash, diff_graph_in_triplestore, execute_sparql_update,
     session as triplestore_session,
 )
-from searchindex import update_searchindex, cleanup_searchindex, update_person_docs_in_searchindex
+from searchindex import update_searchindex, get_searchindex_ids, cleanup_searchindex, update_person_docs_in_searchindex
 from loganne import updateLoganne
 from schedule_tracker import updateScheduleTracker
 
@@ -48,6 +48,10 @@ def run_ingest():
 			new_hash = "sha256:" + hashlib.sha256((content + content_type).encode("utf-8")).hexdigest()
 			if get_source_hash(url) == new_hash:
 				print(f"Skipping {system}: content unchanged (hash {new_hash})", flush=True)
+				# Unchanged docs are still live, so cleanup must not treat them as stale
+				(item_ids, track_ids) = get_searchindex_ids(system, content, content_type)
+				all_item_ids |= item_ids
+				all_track_ids |= track_ids
 				updateScheduleTracker(success=True, system="lucos_arachne", job_name=system)
 				continue
 			fragment = diff_graph_in_triplestore(url, content, content_type)
