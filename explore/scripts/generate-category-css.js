@@ -7,6 +7,7 @@
 import { writeFileSync, mkdirSync, existsSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
+import { fetchWithRetry } from './fetchWithRetry.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -20,10 +21,7 @@ const EOLAS_URL = 'https://eolas.l42.eu/metadata/categories.json';
 
 async function main() {
 	console.log(`Fetching category colours from ${EOLAS_URL} ...`);
-	const response = await fetch(EOLAS_URL);
-	if (!response.ok) {
-		throw new Error(`Failed to fetch category colours: HTTP ${response.status}`);
-	}
+	const response = await fetchWithRetry(EOLAS_URL);
 	const categories = await response.json();
 
 	const cssLines = [
