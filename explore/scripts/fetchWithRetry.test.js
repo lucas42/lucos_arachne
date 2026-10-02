@@ -31,3 +31,18 @@ test('fails after bounded attempts naming eolas, attempt count and status', asyn
 	);
 	assert.equal(calls, 3);
 });
+
+test('passes an abort signal and retries an attempt that times out', async () => {
+	let calls = 0;
+	const hangUntilAborted = (url, { signal }) => new Promise((_, reject) => signal?.addEventListener('abort', () => reject(signal.reason)));
+	const fetchFn = async (url, init) => {
+		calls++;
+		return calls === 1 ? hangUntilAborted(url, init) : { ok: true, status: 200 };
+	};
+	const logs = [];
+	const keepAlive = setTimeout(() => {}, 5000); // AbortSignal.timeout's timer is unref'd; a real socket would keep the loop alive
+	const res = await fetchWithRetry(URL_, { ...opts(fetchFn, logs), timeoutMs: 20 }).finally(() => clearTimeout(keepAlive));
+	assert.equal(res.status, 200);
+	assert.equal(calls, 2);
+	assert.match(logs[0], /Attempt 1 of 3 failed \(network error:/);
+});

@@ -1,12 +1,12 @@
 /**
- * Fetches a URL, retrying on network errors and non-2xx responses.
+ * Fetches a URL, retrying on network errors, timeouts (timeoutMs per attempt) and non-2xx responses.
  * Throws an Error naming the attempt count and last failure once attempts are exhausted.
  */
-export async function fetchWithRetry(url, { attempts = 3, delayMs = 5000, fetchFn = fetch, sleep = ms => new Promise(r => setTimeout(r, ms)), log = console.log } = {}) {
+export async function fetchWithRetry(url, { attempts = 3, delayMs = 5000, timeoutMs = 10000, fetchFn = fetch, sleep = ms => new Promise(r => setTimeout(r, ms)), log = console.log } = {}) {
 	let lastFailure;
 	for (let attempt = 1; attempt <= attempts; attempt++) {
 		try {
-			const response = await fetchFn(url);
+			const response = await fetchFn(url, { signal: AbortSignal.timeout(timeoutMs) });
 			if (response.ok) {
 				if (attempt > 1) log(`Fetch succeeded on attempt ${attempt} of ${attempts}`);
 				return response;
