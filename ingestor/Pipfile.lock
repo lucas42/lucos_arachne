@@ -19,7 +19,6 @@
                 "sha256:6152fdbbf9a77fdec97731721bebf7c4c44f7c29b424b0065826173efc7ed101",
                 "sha256:9f28306018cbd6d329e64a36d58256edff76dd996fe423bc957326e578b82a94"
             ],
-            "index": "pypi",
             "markers": "python_version >= '3.10'",
             "version": "==4.15.1"
         },
@@ -288,12 +287,12 @@
         },
         "typesense": {
             "hashes": [
-                "sha256:7eecc672e4049f7b5777e1cf1e7900d2d1ae2d28a670eda6545b568d1cde1700",
-                "sha256:9a306e328bf0c0030679c154730ec142efbf07fd0c33845b3efae10291e983e7"
+                "sha256:4fe40fc6ace5fcb73e272a695d13073e265da79f605595d329a718e563cb0aa8",
+                "sha256:51ab05688f4eb33a84d60c6056fdc6c586654413983082f400b5aee164f698fc"
             ],
             "index": "pypi",
             "markers": "python_version >= '3.9'",
-            "version": "==2.0.0"
+            "version": "==2.1.0"
         },
         "typing-extensions": {
             "hashes": [
