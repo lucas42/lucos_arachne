@@ -242,12 +242,12 @@
         },
         "lucos-loganne-pythonclient": {
             "hashes": [
-                "sha256:ba3f25423457b2bb0f621f7e049e91ae8ebaa3b0653b08920f3ba4bb95d3d041",
-                "sha256:c3a9fc8c79d213734c6aef1692fb53f26854cd998cfe9da0759a6cdf393cab4c"
+                "sha256:3f3176b58e65a9e80c5400ca041225ded76bfe91b35c21b10f617e317cf9d998",
+                "sha256:5b4e74718bd55d79ac788d8bef36199a7270ef02a5438b24c219fcd79869db65"
             ],
             "index": "pypi",
             "markers": "python_version >= '3.8'",
-            "version": "==2.0.18"
+            "version": "==2.0.19"
         },
         "lucos-schedule-tracker-pythonclient": {
             "hashes": [
@@ -287,12 +287,12 @@
         },
         "typesense": {
             "hashes": [
-                "sha256:4fe40fc6ace5fcb73e272a695d13073e265da79f605595d329a718e563cb0aa8",
-                "sha256:51ab05688f4eb33a84d60c6056fdc6c586654413983082f400b5aee164f698fc"
+                "sha256:5d1fded865ecf9a9e564a4e6b8aa9229c34287e958dc3b16eec408376d142a42",
+                "sha256:e37f799be67cc3a948ac756826e0c2451882a61d37d4da6235a4a80c2436afd6"
             ],
             "index": "pypi",
             "markers": "python_version >= '3.9'",
-            "version": "==2.1.0"
+            "version": "==2.1.1"
         },
         "typing-extensions": {
             "hashes": [
